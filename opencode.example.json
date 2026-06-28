@@ -1,0 +1,33 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+
+  "plugin": ["@alis-build/opencode-plugin"],
+
+  "mcp": {
+    "api": {
+      "type": "remote",
+      "url": "https://mcp.alis.build",
+      "enabled": true
+    }
+  },
+
+  "instructions": ["~/.config/opencode/alis-build/dbd-primer.md"],
+
+  "command": {
+    "build-it": {
+      "description": "Find the right Alis Build skill for what you want to build.",
+      "template": "Run the Alis Build \"build it\" router as described in the Alis Build MCP server instructions: infer what I want built from the current request and workspace context (ask exactly one concise clarification only if the goal is ambiguous), call SearchSkills with the clarified goal, present the matching skills, and load the one I choose. Do not run Define, Build, Deploy, commits, or code edits from this router step — only the loaded skill does that, and only when its workflow requires it."
+    },
+    "fix-it": {
+      "description": "Alias for build-it: find the right Alis Build skill to fix or build something.",
+      "template": "Run the Alis Build \"fix it\" router (the fix-it alias of \"build it\") as described in the Alis Build MCP server instructions: infer what I want fixed or built from the current request, visible errors, and workspace context (ask exactly one concise clarification only if the goal is ambiguous), call SearchSkills with the clarified goal, present the matching skills, and load the one I choose. Do not run Define, Build, Deploy, commits, or code edits from this router step — only the loaded skill does that, and only when its workflow requires it."
+    }
+  },
+
+  "permission": {
+    "bash": {
+      "alis *": "allow",
+      "alis": "allow"
+    }
+  }
+}

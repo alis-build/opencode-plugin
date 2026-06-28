@@ -1,0 +1,37 @@
+{
+  "name": "@alis-build/opencode-plugin",
+  "version": "0.1.0",
+  "description": "Connect opencode to Alis Build through MCP, workflow commands, and the Define-Build-Deploy primer.",
+  "type": "module",
+  "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src",
+    "instructions",
+    "command",
+    "opencode.example.json"
+  ],
+  "keywords": [
+    "opencode",
+    "alis",
+    "build",
+    "mcp",
+    "dbd",
+    "deploys",
+    "workspaces"
+  ],
+  "author": {
+    "name": "Alis Build"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/alis-build/opencode-plugin",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/alis-build/opencode-plugin.git"
+  },
+  "peerDependencies": {
+    "@opencode-ai/plugin": "*"
+  }
+}
