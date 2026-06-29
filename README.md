@@ -12,8 +12,8 @@ builds, deploys, and related workspace context — the opencode counterpart of t
 - OAuth sign-in through Alis Build identity (handled by opencode)
 - Alis Build tools available inside opencode after sign-in
 - A standing Define → Build → Deploy primer loaded into every session via opencode
-  `instructions`, so the agent knows the workflow, how to route requests, and to run
-  the `alis` CLI — no trigger word required
+  `instructions`, so the agent always knows the workflow, how to route requests (it wakes
+  skill discovery when you address **alis**), and how to run the `alis` CLI
 - `/build-it` and `/fix-it` workflow commands
 - The `alis` CLI auto-approved via opencode `permission.bash`, so command-line calls
   run without a permission prompt each time
@@ -97,11 +97,11 @@ opencode mcp auth api
 After sign-in, ask opencode to use Alis Build:
 
 ```text
-build it
+alis, build it
 ```
 
 ```text
-fix it
+alis, fix it
 ```
 
 ```text
