@@ -31,6 +31,7 @@ needs plugin code.
 | `context/dbd-primer.md` via `SessionStart` hook | `instructions` array | `opencode.json` |
 | `allow-alis-cli.sh` (`PreToolUse` Bash hook) | `permission.bash` patterns | `opencode.json` |
 | `inject-skill-session-id.sh` (`PreToolUse` hook) | `tool.execute.before` plugin hook | `src/index.ts` |
+| `inject-service-context.sh` (`SessionStart` hook) | `chat.message` plugin hook | `src/index.ts` |
 | `.claude-plugin/marketplace.json` | npm package + config snippet | `package.json` |
 
 > opencode has **no `config` hook**, so a plugin cannot register MCP servers,

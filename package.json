@@ -1,6 +1,6 @@
 {
   "name": "@alis-build/opencode-plugin",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Connect opencode to Alis Build through MCP, workflow commands, and the Define-Build-Deploy primer.",
   "type": "module",
   "main": "src/index.ts",
