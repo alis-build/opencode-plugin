@@ -29,6 +29,10 @@ This primer is the standing how-to guide for Alis Build work. It carries three t
 - Work in the product build repo: `~/alis.build/<organisation-id>/build/<product-id>`.
 - Install/update the generated packages from Define, then write or edit the business logic
   (usually Go).
+- Use the generated stubs and typed APIs from Define in downstream business logic. Do not use
+  proto reflection to inspect the protobuf definitions at runtime; if generated types or
+  descriptors look stale or missing, update the generated packages from the latest Define output
+  instead.
 - Build a container image from a product repo commit. Docker build paths are relative to the
   neuron folder (e.g. a top-level Dockerfile uses `.`, not `demo/v1`).
 - This connects the locked contract to real behavior.
