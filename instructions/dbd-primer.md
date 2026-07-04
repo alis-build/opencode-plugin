@@ -114,9 +114,3 @@ service's directory.
 **Fallback.** Use the MCP `RunDefine` / `RunBuild` / `RunDeploy` tools only when there is no
 shell available (remote / headless agents). They run the same operation server-side; `RunDefine`
 needs an explicit commit (never `HEAD`).
-
-## Getting deeper
-
-For onboarding or the full step-by-step Simple API quickstart, load the `getting-started` skill
-via `LoadSkill`. When the developer addresses alis ("alis, …"), wake the skill router
-(`SearchSkills`) before doing the work; otherwise respond directly.
