@@ -16,7 +16,7 @@ This primer is the standing how-to guide for Alis Build work. It carries three t
 
 ## Define — lock the API / platform contract
 
-- Edit protobuf files in the landing zone `define` repo: `~/alis.build/<organisation-id>/define`.
+- Edit protobuf files in the organisation's `define` repo: `~/alis.build/<organisation-id>/define`.
 - Commit and push, then Define against a specific, reviewed commit — the contract pins to that
   exact commit, so it has to be deliberate.
 - Define pins the definition to that commit and generates consumable language packages
@@ -95,21 +95,20 @@ context, and chains deterministic steps into one call:
 `<pkg>` is the package id, e.g. `alis.os.cli.v1`; it may be omitted when you are inside the
 service's directory.
 
-- **Pass `--json` for agent-driven calls.** `stdout` then carries the operation as a single
-  structured JSON object — parse `version`, `state` / `done`, `logs_uri`, and `error` from it
-  rather than scraping prose. Progress streams on `stderr`; the human one-liner (no `--json`)
-  is only for narrating to the user.
-- **Let the CLI resolve context.** It auto-detects the latest commit, Dockerfile build/retag
-  paths, and a single-environment target. Don't hand-orchestrate these or ask the user for a
-  commit SHA the CLI will pick.
-- **Long-running operations** stream to completion by default. Use `--async` to start one and
-  print its name, then re-attach with `alis operations wait <name> --json`. Never use shell
-  `sleep` / `git ls-remote` loops to pass time.
+- **Pass `--json` for agent-driven calls** and let the CLI resolve context (latest commit,
+  Dockerfile paths, single-environment target). The full machine contract — stdout/stderr
+  split, NDJSON progress, `--async` + `alis operations wait`, exit codes — is documented in
+  the CLI itself: `alis docs output` and `alis docs exit-codes`. Never use shell `sleep` /
+  `git ls-remote` loops to pass time.
+- **Production deploys are gated.** A deploy targeting a production environment exits with
+  code 3 until re-run with `--confirm-production`. That flag requires the user's explicit
+  approval — never add it yourself; report the target to the user and ask (`alis docs safety`).
+  Check which environments are production with `alis context view --json`.
 - **The CLI is self-documenting — consult it, don't memorise it.** This primer names only the
-  DBD core. For the full command surface (e.g. `service new`, `packages`, `product`,
-  `environment`, `operations`, `login`) run `alis -h`; for a command's flags run
-  `alis <cmd> --help`. Treat that output as the source of truth; this primer and the skills
-  deliberately do not restate it.
+  DBD core. Run `alis docs` for the complete agent operating manual (topics: overview, dbd,
+  output, exit-codes, safety, context, workflows), `alis -h` for the command surface, and
+  `alis <cmd> --help` for a command's flags. Treat that output as the source of truth; this
+  primer and the skills deliberately do not restate it.
 
 **Fallback.** Use the MCP `RunDefine` / `RunBuild` / `RunDeploy` tools only when there is no
 shell available (remote / headless agents). They run the same operation server-side; `RunDefine`

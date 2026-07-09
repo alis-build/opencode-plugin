@@ -2,7 +2,7 @@
 
 **Connect [opencode](https://opencode.ai) to Alis Build.**
 
-Use this plugin to let opencode inspect Alis Build landing zones, products, neurons,
+Use this plugin to let opencode inspect Alis Build organisations, products, neurons,
 builds, deploys, and related workspace context — the opencode counterpart of the
 [Alis Build Claude Code plugin](https://github.com/alis-build/claude-plugin).
 
@@ -43,7 +43,7 @@ needs plugin code.
 You need:
 
 - opencode installed
-- An Alis Build account with access to the landing zones and products you want to use
+- An Alis Build account with access to the organisations and products you want to use
 - Network access to `https://mcp.alis.build` and the Alis Build identity provider
 
 ## Install
@@ -106,11 +106,11 @@ alis, fix it
 ```
 
 ```text
-Use Alis Build to list the landing zones I can access.
+Use Alis Build to list the organisations I can access.
 ```
 
 ```text
-Show recent builds for product os in landing zone alis.
+Show recent builds for product os in organisation alis.
 ```
 
 The `/build-it` and `/fix-it` commands run the same skill-discovery router.

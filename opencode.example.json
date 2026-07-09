@@ -27,7 +27,10 @@
   "permission": {
     "bash": {
       "alis *": "allow",
-      "alis": "allow"
+      "alis": "allow",
+      "alis *--confirm-production*": "ask",
+      "alis blocks uninstall *--yes*": "ask",
+      "alis block uninstall *--yes*": "ask"
     }
   }
 }
