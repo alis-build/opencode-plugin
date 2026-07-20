@@ -27,8 +27,8 @@ This primer is the standing how-to guide for Alis Build work. It carries three t
 ## Build — implement the service and produce a deployable artifact
 
 - Work in the product build repo: `~/alis.build/<organisation-id>/build/<product-id>`.
-- Install/update the generated packages from Define, then write or edit the business logic
-  (usually Go).
+- Install/update the generated packages from Define with `alis packages` (see **Executing
+  DBD**), then write or edit the business logic (usually Go).
 - Use the generated stubs and typed APIs from Define in downstream business logic. Do not use
   proto reflection to inspect the protobuf definitions at runtime; if generated types or
   descriptors look stale or missing, update the generated packages from the latest Define output
@@ -91,9 +91,20 @@ context, and chains deterministic steps into one call:
 - **Define** (and publish packages): `alis define <pkg> --json --install`
 - **Build** (optionally deploy): `alis build <pkg> --json --deploy -e <env>`
 - **Deploy**: `alis deploy <pkg> --json` (add `--version` / `-e <env>` as needed)
+- **Packages** (install / upgrade / add a service's language packages):
+  `alis packages install|upgrade|add <pkg> --json` (add `--language go|node|python|dart` to
+  scope to one language)
 
 `<pkg>` is the package id, e.g. `alis.os.cli.v1`; it may be omitted when you are inside the
 service's directory.
+
+- **Never hand-roll package-manager environments.** Do not run `go mod tidy`, `pnpm install`,
+  `pip install`, or `dart pub get` directly with hand-assembled `GOPROXY` / `GONOSUMDB` /
+  registry settings — resolving the private Alis registries yourself is error-prone and the
+  main reason those commands fail. `alis packages install` refreshes registry credentials
+  automatically and runs the right package manager(s) for you; `alis packages upgrade` bumps
+  the service's own Alis-defined package (`--all` for every package). Reserve direct
+  package-manager commands for diagnostics after `alis packages` has run.
 
 - **Pass `--json` for agent-driven calls** and let the CLI resolve context (latest commit,
   Dockerfile paths, single-environment target). The full machine contract — stdout/stderr
