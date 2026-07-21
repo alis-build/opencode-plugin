@@ -111,6 +111,11 @@ service's directory.
   split, NDJSON progress, `--async` + `alis operations wait`, exit codes — is documented in
   the CLI itself: `alis docs output` and `alis docs exit-codes`. Never use shell `sleep` /
   `git ls-remote` loops to pass time.
+- **Auth recovery.** If a git push/pull to an Alis remote fails with an auth error, run
+  `alis authorise <org>.<product> --json` (alias: `alis a`) once and retry — it installs the
+  auto-refreshing Alis git credential helper and clears stale tokens. It is a one-time repair,
+  not a pre-push ritual. Exit code 4 from any command means signed out → have the user run
+  `alis login`. Never edit stored credential files or git auth config by hand.
 - **Production deploys are gated.** A deploy targeting a production environment exits with
   code 3 until re-run with `--confirm-production`. That flag requires the user's explicit
   approval — never add it yourself; report the target to the user and ask (`alis docs safety`).
