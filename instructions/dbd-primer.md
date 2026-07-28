@@ -7,7 +7,8 @@ Alis Build task, and walk the user through DBD rather than handing over a discon
 This primer is the standing how-to guide for Alis Build work. It carries three things:
 
 1. The **mental model** — what DBD is and where things live on disk.
-2. The **routing contract** — saying "alis" wakes skill discovery; when to run a command directly.
+2. The **routing contract** — saying "alis" wakes skill discovery (with room for a light
+   proactive suggestion on clearly platform-shaped work); when to run a command directly.
 3. The **execution contract** — how to actually run Define / Build / Deploy.
 
 > The Alis Build MCP provides the *tools*; this primer provides *how to operate*. When a
@@ -48,23 +49,33 @@ This primer is the standing how-to guide for Alis Build work. It carries three t
 ## Routing — say "alis" to wake the skill router
 
 Skill discovery is **opt-in, gated on the wake word.** What wakes the routing flow is the
-developer *speaking to alis* — not the shape of the request. Do **NOT** run `SearchSkills` on
+developer *speaking to alis* — not the shape of the request. Do **NOT** run a skills search on
 ordinary build/fix/add-sounding prompts; firing it on every functional-looking message floods
-the session. Wait to be addressed.
+the session. Wait to be addressed (with one narrow exception below).
+
+The skill registry is reached through the CLI: `alis skills search "<query>" --json` to
+discover, `alis skills load <id> --json` to load, `alis skills resource <id> <path> --json`
+for referenced files, `alis skills request` to propose a new one (`alis docs skills` has the
+full contract). Use the MCP `SearchSkills`/`LoadSkill` tools only when no shell is available.
 
 - **Addressed to alis → wake up and route.** When the developer speaks to alis — "alis, …",
   "hey alis", "ask alis to …", "get alis to …", or otherwise invokes alis by name — wake up
   and find a skill: work out the intended outcome (ask ONE concise question only if it is
-  genuinely ambiguous), call the Alis Build MCP `SearchSkills` tool FIRST with that outcome as
-  the query (fall back to `ListSkills` if it returns nothing), present the matches (id, what
-  each does, when to choose it), then `LoadSkill` and follow that skill — the loaded skill owns
-  execution. **Do NOT inspect, write, or edit code, run Define / Build / Deploy, or make
-  commits before a skill is loaded.** If nothing fits, say so and offer `RequestSkill`. Explicitly
-  running the `build it` / `fix it` command is itself a way to address alis and invoke this flow.
+  genuinely ambiguous), run `alis skills search "<intended outcome>" --json` FIRST, present
+  the matches (id, what each does, when to choose it), then `alis skills load <id>` and
+  follow that skill — the loaded skill owns execution. **Do NOT inspect, write, or edit code,
+  run Define / Build / Deploy, or make commits before a skill is loaded.** The search is the
+  discovery mechanism — do not fall back to listing the whole catalogue; if nothing fits, say
+  so and offer `alis skills request`. Explicitly running the `build it` / `fix it` command is
+  itself a way to address alis and invoke this flow.
 
 - **Not addressed to alis → just respond.** Handle the request directly, or ask what they
-  need — do not auto-route it through `SearchSkills`. If a skill would clearly help, you may
-  suggest the developer "ask alis" to wake the router, but don't force it.
+  need — do not auto-route it through skill discovery. One narrow exception: when the request
+  is clearly Alis Build platform work (landing zones, products, neurons, blocks, DBD, platform
+  infra) and no skill is loaded yet, you MAY run one `alis skills search` and *offer* the top
+  match — "there's a skill for this; want me to load it?" — then continue however the
+  developer answers. Never auto-load the skill, never block the work on the offer, and never
+  fire the search on generic coding prompts that merely happen inside an Alis repo.
 
 - **Direct DBD commands → run the CLI, no skill needed.** "define it", "deploy it", "ship it",
   "run define/build/deploy", "define and install" on an already-known target are deterministic
@@ -128,4 +139,16 @@ service's directory.
 
 **Fallback.** Use the MCP `RunDefine` / `RunBuild` / `RunDeploy` tools only when there is no
 shell available (remote / headless agents). They run the same operation server-side; `RunDefine`
-needs an explicit commit (never `HEAD`).
+needs an explicit commit (never `HEAD`). The same rule covers the MCP skills tools
+(`SearchSkills` / `LoadSkill` / `LoadSkillResources` / `RequestSkill`): they hit the same
+registry as `alis skills` and exist for shell-less sessions.
+
+## Google documentation — prefer the Developer Knowledge MCP
+
+When the Google Developer Knowledge MCP tools are available in this session
+(`search_documents`, `get_documents`, `answer_query`), prefer them over generic web search
+for Google-technology documentation — Google Cloud, Android, Flutter, Firebase, Go, web.dev,
+and other Google developer surfaces. They query Google's own documentation index and return
+current, canonical pages. Alis Build services run on Google Cloud (Cloud Run, Spanner,
+Pub/Sub, Terraform), so this covers most platform-infrastructure questions. If the tools are
+not present, research normally.

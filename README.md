@@ -8,35 +8,47 @@ builds, deploys, and related workspace context — the opencode counterpart of t
 
 ## What You Get
 
-- A preconfigured opencode MCP server for `https://mcp.alis.build`
+- A preconfigured opencode MCP server for `https://mcp.alis.build` with a static Alis
+  Build OAuth client (the Alis auth server does not support Dynamic Client Registration)
 - OAuth sign-in through Alis Build identity (handled by opencode)
 - Alis Build tools available inside opencode after sign-in
-- A standing Define → Build → Deploy primer loaded into every session via opencode
-  `instructions`, so the agent always knows the workflow, how to route requests (it wakes
-  skill discovery when you address **alis**), and how to run the `alis` CLI
+- A standing Define → Build → Deploy primer injected by the plugin into the first
+  message of every session, so the agent always knows the workflow, how to route
+  requests (it wakes skill discovery when you address **alis**, CLI-first via
+  `alis skills search|load`), and how to run the `alis` CLI
+- Workspace service context: inside `~/alis.build/<org>/{build,define}/…` the plugin
+  injects the package id and a pointer to the definitions ⇄ implementation counterpart
 - `/build-it` and `/fix-it` workflow commands
-- The `alis` CLI auto-approved via opencode `permission.bash`, so command-line calls
-  run without a permission prompt each time
+- Strict `alis` CLI auto-approval via the plugin's `permission.ask` hook: clean, single
+  `alis …` commands run without a prompt; chained/redirected commands
+  (`alis define && rm -rf`) and the double-key carve-outs (`--confirm-production`,
+  `--approve`, `blocks|block uninstall --yes`) always stay on a human prompt. Restrict
+  further with a space-separated `ALIS_ALLOWED_SUBCMDS` allowlist
+- An approval bridge for the alis CLI's own gates: auto-allowed `alis` commands are
+  recorded at `~/.alis/agent-approval.json` (`permission_mode: "auto-allow"`) and the
+  plugin exports `ALIS_OPENCODE=1` into every shell command, so the CLI can treat a
+  plugin-approved command as a standing grant for non-production approvals. Production
+  deploys are unaffected — the CLI always requires `--confirm-production` from a human
 
 ## How this maps from the Claude Code plugin
 
 opencode and Claude Code expose the same capabilities through different mechanisms.
-Most of the Claude plugin is **config** in opencode; only the session-id injection
-needs plugin code.
 
 | Claude Code plugin | opencode equivalent | Lives in |
 | --- | --- | --- |
-| `.mcp.json` (HTTP MCP + OAuth) | `mcp.api` (`type: "remote"`) | `opencode.json` |
+| `.mcp.json` (HTTP MCP + OAuth) | `mcp.api` (`type: "remote"` + `oauth.clientId`) | `opencode.json` |
 | `commands/*.md` | `command/*.md` or `command` config key | this repo / config |
-| `context/dbd-primer.md` via `SessionStart` hook | `instructions` array | `opencode.json` |
-| `allow-alis-cli.sh` (`PreToolUse` Bash hook) | `permission.bash` patterns | `opencode.json` |
+| `context/dbd-primer.md` via `SessionStart` hook | `chat.message` plugin hook (primer ships in the npm package) | `src/index.ts` |
+| `allow-alis-cli.sh` (`PreToolUse` Bash hook) | `permission.ask` plugin hook (+ `"alis *": "ask"` config so it fires) | `src/index.ts` |
+| `~/.alis/agent-approval.json` bridge | `tool.execute.before` (bash) + `shell.env` plugin hooks | `src/index.ts` |
 | `inject-skill-session-id.sh` (`PreToolUse` hook) | `tool.execute.before` plugin hook | `src/index.ts` |
 | `inject-service-context.sh` (`SessionStart` hook) | `chat.message` plugin hook | `src/index.ts` |
 | `.claude-plugin/marketplace.json` | npm package + config snippet | `package.json` |
 
-> opencode has **no `config` hook**, so a plugin cannot register MCP servers,
-> instructions, or commands programmatically. That is why those are config, and why
-> install is a config snippet plus an npm package rather than a single command.
+> opencode has **no `config` hook**, so a plugin cannot register MCP servers or
+> commands programmatically. That is why those are config, and why install is a config
+> snippet plus an npm package rather than a single command. The primer and the alis
+> approval logic, however, now live entirely in the plugin — no manual file installs.
 
 ## Before You Start
 
@@ -55,30 +67,23 @@ opencode config — `~/.config/opencode/opencode.json` for a global install, or
 `.opencode/opencode.json` (or `opencode.json` at the repo root) for a project install.
 
 It wires up four things: the `@alis-build/opencode-plugin` npm plugin, the `api` MCP
-server, the `/build-it` + `/fix-it` commands, and the `alis` CLI permission allow.
-opencode installs the npm plugin automatically with Bun on next start.
+server (with the static Alis Build OAuth client), the `/build-it` + `/fix-it`
+commands, and the `"alis *": "ask"` bash permission that routes `alis` commands
+through the plugin's strict approval hook. opencode installs the npm plugin
+automatically with Bun on next start.
 
-### 2. Install the primer file
+The primer ships inside the npm package and is injected by the plugin — there is no
+separate primer install step, and primer updates arrive with plugin upgrades.
 
-The DBD primer loads via the `instructions` array, which references a file path.
-Copy the bundled primer to the path used in the config:
-
-```sh
-mkdir -p ~/.config/opencode/alis-build
-curl -fsSL https://raw.githubusercontent.com/alis-build/opencode-plugin/main/instructions/dbd-primer.md \
-  -o ~/.config/opencode/alis-build/dbd-primer.md
-```
-
-(Or clone this repo and point the `instructions` path at `instructions/dbd-primer.md`.)
-
-### 3. (Optional) Install the commands as files
+### 2. (Optional) Install the commands as files
 
 The `command` block in the config defines `/build-it` and `/fix-it` inline, so this
 step is optional. If you prefer file-based commands, copy `command/build-it.md` and
 `command/fix-it.md` into `~/.config/opencode/command/` (global) or `.opencode/command/`
-(project) and drop the `command` block from your config.
+(project) and drop the `command` block from your config. The file and inline versions
+must stay word-for-word identical — sync both when updating either.
 
-### 4. Start opencode
+### 3. Start opencode
 
 ```sh
 opencode
@@ -86,8 +91,8 @@ opencode
 
 ## Sign In
 
-opencode handles the MCP OAuth flow. On first use of an Alis tool it will prompt you to
-authenticate, or you can trigger it explicitly:
+opencode handles the MCP OAuth flow using the static Alis Build client. On first use of
+an Alis tool it will prompt you to authenticate, or you can trigger it explicitly:
 
 ```sh
 opencode mcp auth api
@@ -117,26 +122,12 @@ The `/build-it` and `/fix-it` commands run the same skill-discovery router.
 
 ### `alis` CLI auto-approval
 
-The `permission.bash` block approves `alis ...` invocations so the CLI runs without a
-prompt. opencode's bash permission matching is glob-based and **less strict than the
-Claude plugin's shell hook**, which explicitly rejected chained/redirected commands
-(`alis define && rm -rf`). If you want that stricter guarantee, tighten the pattern to
-specific subcommands (e.g. `"alis define *": "allow"`, `"alis build *": "allow"`) and
-leave everything else at the default `ask`.
-
-## Verify before relying on this
-
-opencode's plugin hook surface is newer and less documented than Claude Code's. Two
-things should be confirmed against your installed opencode / `@opencode-ai/plugin`
-version before treating this as production-ready:
-
-1. **Session-id injection** (`src/index.ts`) — the exact hook field names (`input.tool`,
-   `output.args`, and where the session id is exposed) need verifying. The handler fails
-   safe: if it can't find the session id it leaves the call untouched, and the skill
-   falls back to its own in-markdown discovery.
-2. **Command directory name** — opencode versions have used both `command/` and
-   `commands/`. The inline `command` config block avoids this ambiguity; prefer it if the
-   file-based commands don't register.
+The `"alis *": "ask"` permission pattern routes every `alis` command to the plugin's
+`permission.ask` hook, which auto-allows only a clean, single `alis <subcommand> …`
+invocation — the same conservative parser as the Claude plugin's shell hook. Anything
+chained or redirected, and the explicit-approval carve-outs (`--confirm-production`,
+`--approve`, `blocks|block uninstall --yes`), fall through to opencode's normal prompt.
+If the plugin fails to load, all `alis` commands simply prompt — safe degradation.
 
 ## Repository layout
 
@@ -148,13 +139,21 @@ opencode-plugin/
 ├── tsconfig.json
 ├── opencode.example.json   # config snippet to merge into opencode.json
 ├── src/
-│   └── index.ts            # plugin: session-id injection hook
+│   └── index.ts            # plugin: primer + service context, session-id injection,
+│                           #   alis approval hook, agent-approval bridge, shell env
 ├── instructions/
-│   └── dbd-primer.md       # always-loaded DBD primer
+│   └── dbd-primer.md       # DBD primer (injected by the plugin; synced from claude-plugin)
 └── command/
     ├── build-it.md
     └── fix-it.md
 ```
+
+## Primer sync
+
+`instructions/dbd-primer.md` is synced from the canonical primer in the Alis Build
+Claude Code plugin (`claude-plugin/plugins/alis-build/context/dbd-primer.md`). The only
+local difference is the closing sentence of the Google documentation section (opencode
+has no `/connect-google` command). Sync the body on each claude-plugin primer release.
 
 ## License
 

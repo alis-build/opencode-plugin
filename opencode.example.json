@@ -7,30 +7,29 @@
     "api": {
       "type": "remote",
       "url": "https://mcp.alis.build",
-      "enabled": true
+      "enabled": true,
+      "oauth": {
+        "clientId": "6abad977-3e74-4c79-939f-b059c6ec0e38",
+        "scope": "build:read build:write"
+      }
     }
   },
-
-  "instructions": ["~/.config/opencode/alis-build/dbd-primer.md"],
 
   "command": {
     "build-it": {
       "description": "Find the right Alis Build skill for what you want to build.",
-      "template": "Run the Alis Build \"build it\" router as described in the Alis Build MCP server instructions: infer what I want built from the current request and workspace context (ask exactly one concise clarification only if the goal is ambiguous), call SearchSkills with the clarified goal, present the matching skills, and load the one I choose. Do not run Define, Build, Deploy, commits, or code edits from this router step — only the loaded skill does that, and only when its workflow requires it."
+      "template": "Run the Alis Build \"build it\" router as described in the DBD primer's routing contract: infer what I want built from the current request and workspace context (ask exactly one concise clarification only if the goal is ambiguous), run `alis skills search \"<clarified goal>\" --json` (use the MCP SearchSkills tool only if no shell is available), present the matching skills, and load the one I choose with `alis skills load <id>`. If the search returns nothing, say so and offer `alis skills request` — do not fall back to listing the whole catalogue. Do not run Define, Build, Deploy, commits, or code edits from this router step — only the loaded skill does that, and only when its workflow requires it."
     },
     "fix-it": {
       "description": "Alias for build-it: find the right Alis Build skill to fix or build something.",
-      "template": "Run the Alis Build \"fix it\" router (the fix-it alias of \"build it\") as described in the Alis Build MCP server instructions: infer what I want fixed or built from the current request, visible errors, and workspace context (ask exactly one concise clarification only if the goal is ambiguous), call SearchSkills with the clarified goal, present the matching skills, and load the one I choose. Do not run Define, Build, Deploy, commits, or code edits from this router step — only the loaded skill does that, and only when its workflow requires it."
+      "template": "Run the Alis Build \"fix it\" router (the fix-it alias of \"build it\") as described in the DBD primer's routing contract: infer what I want fixed or built from the current request, visible errors, and workspace context (ask exactly one concise clarification only if the goal is ambiguous), run `alis skills search \"<clarified goal>\" --json` (use the MCP SearchSkills tool only if no shell is available), present the matching skills, and load the one I choose with `alis skills load <id>`. If the search returns nothing, say so and offer `alis skills request` — do not fall back to listing the whole catalogue. Do not run Define, Build, Deploy, commits, or code edits from this router step — only the loaded skill does that, and only when its workflow requires it."
     }
   },
 
   "permission": {
     "bash": {
-      "alis *": "allow",
-      "alis": "allow",
-      "alis *--confirm-production*": "ask",
-      "alis blocks uninstall *--yes*": "ask",
-      "alis block uninstall *--yes*": "ask"
+      "alis *": "ask",
+      "alis": "ask"
     }
   }
 }

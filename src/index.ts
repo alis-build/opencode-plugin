@@ -1,23 +1,33 @@
 import type { Plugin } from "@opencode-ai/plugin"
-import { existsSync, readdirSync } from "node:fs"
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs"
+import { homedir } from "node:os"
+import { dirname, join } from "node:path"
+import { fileURLToPath } from "node:url"
 
 /**
  * Alis Build plugin for opencode.
  *
- * This file ships the two pieces of behaviour that genuinely need code:
+ * This file ships the behaviour that needs code — the opencode mirror of the
+ * Claude Code plugin's hooks:
  *
- *   1. Injecting the opencode session id into Alis MCP calls (LoadSkill / SpecIt).
- *   2. Injecting a cwd-dependent "service context" block when the session is
- *      opened inside an Alis Build workspace directory — the mirror of the Claude
- *      plugin's `inject-service-context.sh` SessionStart hook.
+ *   1. Injecting the DBD primer and a cwd-dependent "service context" block into
+ *      the first message of each session (mirror of the Claude plugin's
+ *      `load-primer.sh` + `inject-service-context.sh` SessionStart hooks).
+ *   2. Injecting the opencode session id into the session-aware Alis MCP calls
+ *      (LoadSkill / SpecIt / RunDefine / RunBuild / RunDeploy).
+ *   3. Auto-approving clean, single `alis …` shell commands via `permission.ask`
+ *      (mirror of `allow-alis-cli.sh`), with the same double-key carve-outs:
+ *      `--confirm-production`, `--approve`, and `blocks|block uninstall --yes`
+ *      always stay on a human prompt.
+ *   4. Recording the pending `alis` command at `~/.alis/agent-approval.json` so
+ *      the alis CLI's approval gate can treat a plugin-auto-allowed command as a
+ *      standing grant (permission_mode "auto-allow"; anything the human clicked
+ *      through records "default").
+ *   5. Exporting `ALIS_OPENCODE=1` into every shell command via `shell.env` — the
+ *      env marker the alis CLI requires before trusting the approval record.
  *
- * Everything else the Claude Code plugin did is config in opencode (see
- * opencode.example.json and the README):
- *
- *   - the MCP server            -> `mcp.api`        in opencode.json
- *   - the always-loaded primer  -> `instructions`   in opencode.json
- *   - the build-it / fix-it cmds -> `command/*.md`   (or the `command` config key)
- *   - auto-approving `alis ...`  -> `permission.bash` in opencode.json
+ * The MCP server and the build-it / fix-it commands remain config
+ * (see opencode.example.json and the README).
  *
  * ---------------------------------------------------------------------------
  * Service-context injection (mirror of `inject-service-context.sh`)
@@ -31,24 +41,11 @@ import { existsSync, readdirSync } from "node:fs"
  * other half plus the package id (`<org>.<path-with-/-as-.>`, e.g. alis.os.cli.v1)
  * into the first user message of each session. opencode exposes the working
  * directory to the plugin as `directory`; the block is computed once at load.
- *
- * ---------------------------------------------------------------------------
- * Session-id injection (mirror of the Claude `inject-skill-session-id` hook)
- * ---------------------------------------------------------------------------
- * The Alis MCP server uses the caller's session id to resolve the active Context
- * and prepend an <alis-runtime-context> block to LoadSkill / SpecIt results. The
- * model never supplies it; we merge it into the outgoing tool arguments here.
- *
- * NOTE: opencode's plugin hook surface is younger and less documented than Claude
- * Code's. The field accessors below (`input.tool`, `output.args`, the chat.message
- * `parts` array, and where the session id is exposed) are written defensively and
- * should be re-verified against the installed @opencode-ai/plugin version — see
- * the README "Verify" section.
  */
 
 // Matches the Alis MCP tools that resolve server-side Context from the session id.
 // MCP tools are exposed to opencode with a server-name prefix, so match the suffix.
-const SESSION_AWARE_TOOL = /(?:^|[._-])(LoadSkill|SpecIt)$/
+const SESSION_AWARE_TOOL = /(?:^|[._-])(LoadSkill|SpecIt|RunDefine|RunBuild|RunDeploy)$/
 
 /**
  * Given a working directory, return the Alis Build service-context block to
@@ -134,22 +131,103 @@ export function buildServiceContext(dir: string): string | null {
   return lines.join("\n")
 }
 
+/**
+ * Classify a shell command for the alis auto-approval flow (mirror of
+ * `allow-alis-cli.sh`):
+ *
+ *   "allow" — a clean, single `alis <subcommand> …` invocation.
+ *   "defer" — anything else: not alis, chained/redirected (which would let
+ *             `alis define && rm -rf /` ride on the allow), an
+ *             explicit-approval flag (`--confirm-production`, `--approve`),
+ *             `blocks|block uninstall --yes` (destructive, prompt-skipping),
+ *             or a subcommand outside ALIS_ALLOWED_SUBCMDS when that
+ *             space-separated allowlist is set. Deferred commands stay on
+ *             opencode's normal permission prompt — deliberate double-keying
+ *             for the carve-outs.
+ */
+export function classifyAlisCommand(cmd: string): "allow" | "defer" {
+  if (!cmd) return "defer"
+  // Reject anything that splits into multiple shell segments or redirects. A
+  // legitimately-quoted metacharacter just means the user gets a normal prompt
+  // this once, which is safe degradation.
+  if (/[|&;<>`\n]|\$\(/.test(cmd)) return "defer"
+
+  const tokens = cmd.trim().split(/\s+/)
+  if (tokens[0] !== "alis") return "defer"
+  const sub = tokens[1] ?? ""
+
+  if (cmd.includes("--confirm-production") || cmd.includes("--approve")) return "defer"
+  if ((sub === "blocks" || sub === "block") && tokens.includes("uninstall") && tokens.includes("--yes")) return "defer"
+
+  const allowlist = (process.env.ALIS_ALLOWED_SUBCMDS ?? "").trim()
+  if (allowlist && !allowlist.split(/\s+/).includes(sub)) return "defer"
+
+  return "allow"
+}
+
+/**
+ * Record the pending `alis` command for the alis CLI's approval gate. Mirrors
+ * the Claude hook's atomic write: temp file in ~/.alis, chmod 600, rename.
+ * Best-effort — any failure is swallowed so it never affects the tool call.
+ */
+function writeAgentApproval(command: string, sessionID: string | undefined, autoAllowed: boolean): void {
+  const dir = join(homedir(), ".alis")
+  const tmp = join(dir, `.agent-approval.${process.pid}.${Date.now()}`)
+  try {
+    mkdirSync(dir, { recursive: true })
+    const record = {
+      version: 1,
+      harness: "opencode",
+      permission_mode: autoAllowed ? "auto-allow" : "default",
+      session_id: sessionID ?? "",
+      command,
+      written_at: new Date().toISOString(),
+    }
+    writeFileSync(tmp, JSON.stringify(record), { mode: 0o600 })
+    chmodSync(tmp, 0o600)
+    renameSync(tmp, join(dir, "agent-approval.json"))
+  } catch {
+    try {
+      rmSync(tmp, { force: true })
+    } catch {
+      // best-effort cleanup only
+    }
+  }
+}
+
+/** Load the DBD primer shipped inside this package, or null when unreadable. */
+function loadPrimer(): string | null {
+  try {
+    const here = dirname(fileURLToPath(import.meta.url))
+    const text = readFileSync(join(here, "..", "instructions", "dbd-primer.md"), "utf8").trim()
+    return text.length ? text : null
+  } catch {
+    return null
+  }
+}
+
 export const AlisBuildPlugin: Plugin = async ({ directory, worktree }: any) => {
   // The working directory is fixed for the life of the plugin (opencode loads
-  // plugins per project), so compute the block once.
+  // plugins per project), so compute the injected blocks once.
   const cwd: string = directory ?? worktree ?? ""
   const serviceContext = cwd ? buildServiceContext(cwd) : null
+  const primer = loadPrimer()
 
-  // Inject the block into the first user message of each session only.
+  // Inject the blocks into the first user message of each session only.
   const injectedSessions = new Set<string>()
   let injectedWithoutSessionId = false
 
+  // Permission ids / call ids this plugin auto-allowed via permission.ask. Used
+  // to distinguish "auto-allow" (standing grant) from "default" (the human saw a
+  // prompt, or the allow came from user config) in the approval record.
+  const autoAllowed = new Set<string>()
+
   return {
-    "chat.message": async (_input: any, output: any) => {
-      if (!serviceContext) return
+    "chat.message": async (input: any, output: any) => {
+      if (!primer && !serviceContext) return
 
       const sessionID: string | undefined =
-        output?.message?.sessionID ?? output?.message?.info?.sessionID ?? _input?.sessionID
+        input?.sessionID ?? output?.message?.sessionID ?? output?.message?.info?.sessionID
       if (sessionID) {
         if (injectedSessions.has(sessionID)) return
         injectedSessions.add(sessionID)
@@ -161,7 +239,11 @@ export const AlisBuildPlugin: Plugin = async ({ directory, worktree }: any) => {
       const parts: any[] | undefined = output?.parts
       if (!Array.isArray(parts)) return
 
-      const block = `<alis-service-context>\n${serviceContext}\n</alis-service-context>`
+      const blocks: string[] = []
+      if (primer) blocks.push(`<alis-build-primer>\n${primer}\n</alis-build-primer>`)
+      if (serviceContext) blocks.push(`<alis-service-context>\n${serviceContext}\n</alis-service-context>`)
+      const block = blocks.join("\n\n")
+
       const firstText = parts.find((p) => p && p.type === "text" && typeof p.text === "string")
       if (firstText) {
         firstText.text = `${block}\n\n${firstText.text}`
@@ -170,15 +252,38 @@ export const AlisBuildPlugin: Plugin = async ({ directory, worktree }: any) => {
       }
     },
 
+    "permission.ask": async (input: any, output: { status: "ask" | "deny" | "allow" }) => {
+      if (input?.type !== "bash") return
+      const cmd = String(input?.metadata?.command ?? input?.title ?? "")
+      if (classifyAlisCommand(cmd) !== "allow") return
+      output.status = "allow"
+      for (const id of [input?.callID, input?.id]) {
+        if (typeof id === "string" && id) autoAllowed.add(id)
+      }
+    },
+
+    "shell.env": async (_input: any, output: { env: Record<string, string> }) => {
+      // The env marker the alis CLI requires before trusting an opencode-written
+      // approval record (a stale record from another harness grants nothing).
+      output.env.ALIS_OPENCODE = "1"
+    },
+
     "tool.execute.before": async (input: any, output: any) => {
       const toolName: string = input?.tool ?? ""
+
+      if (toolName === "bash") {
+        const cmd = String(output?.args?.command ?? "")
+        // Same conservative gate as the classifier: only a clean, single command
+        // whose first token is `alis` is worth recording.
+        if (cmd && !/[|&;<>`\n]|\$\(/.test(cmd) && cmd.trim().split(/\s+/)[0] === "alis") {
+          writeAgentApproval(cmd, input?.sessionID, autoAllowed.has(input?.callID ?? ""))
+        }
+        return
+      }
+
       if (!SESSION_AWARE_TOOL.test(toolName)) return
 
-      // Resolve the current session id. The precise accessor depends on the
-      // opencode plugin API version; try the documented shapes in order.
-      const sessionID: string | undefined =
-        input?.sessionID ?? input?.sessionId ?? output?.sessionID
-
+      const sessionID: string | undefined = input?.sessionID
       if (!sessionID) return
 
       // Merge session_id into the outgoing MCP arguments without clobbering

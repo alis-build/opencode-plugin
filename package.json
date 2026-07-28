@@ -1,6 +1,6 @@
 {
   "name": "@alis-build/opencode-plugin",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Connect opencode to Alis Build through MCP, workflow commands, and the Define-Build-Deploy primer.",
   "type": "module",
   "main": "src/index.ts",
@@ -33,5 +33,12 @@
   },
   "peerDependencies": {
     "@opencode-ai/plugin": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^24",
+    "typescript": "^5"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
   }
 }
