@@ -34,6 +34,16 @@ This primer is the standing how-to guide for Alis Build work. It carries three t
   proto reflection to inspect the protobuf definitions at runtime; if generated types or
   descriptors look stale or missing, update the generated packages from the latest Define output
   instead.
+- **Import the service-level generated package, never the legacy product-level one.** The
+  canonical Go import for a defined package `<org>.<product>.<service>.<vN>` is
+  `alis.build/<org>/<product>/<service>/<vN>` (the package id with dots as slashes, e.g.
+  `alis.zz.test.v3` → `alis.build/alis/zz/test/v3`). Older services may still import
+  `internal.<product>.<org>.services/protobuf/...` or `<product>.<org>.services/protobuf/...` —
+  that is the deprecated product-level package. Do **not** copy that import style from
+  neighboring services into new or edited code, even when every existing service in the repo
+  uses it; it resolves without error, so the only signal is the path shape. If the service you
+  are editing still depends on the legacy package, mention it and offer the
+  `dbd-migrate-to-neuron-protos` skill rather than extending the legacy usage.
 - Build a container image from a product repo commit. Docker build paths are relative to the
   neuron folder (e.g. a top-level Dockerfile uses `.`, not `demo/v1`).
 - This connects the locked contract to real behavior.
