@@ -11,9 +11,9 @@ This primer is the standing how-to guide for Alis Build work. It carries three t
    proactive suggestion on clearly platform-shaped work); when to run a command directly.
 3. The **execution contract** — how to actually run Define / Build / Deploy.
 
-> The Alis Build MCP provides the *tools*; this primer provides *how to operate*. When a
-> specific tool description is more precise than this primer (exact arguments, hard
-> constraints), follow the tool description.
+> The `alis` CLI provides the *tools*; this primer provides *how to operate*. When the CLI's
+> own documentation (`alis docs`, `alis <cmd> --help`) is more precise than this primer (exact
+> arguments, hard constraints), follow the CLI documentation.
 
 ## Define — lock the API / platform contract
 
@@ -66,7 +66,7 @@ the session. Wait to be addressed (with one narrow exception below).
 The skill registry is reached through the CLI: `alis skills search "<query>" --json` to
 discover, `alis skills load <id> --json` to load, `alis skills resource <id> <path> --json`
 for referenced files, `alis skills request` to propose a new one (`alis docs skills` has the
-full contract). Use the MCP `SearchSkills`/`LoadSkill` tools only when no shell is available.
+full contract).
 
 - **Addressed to alis → wake up and route.** When the developer speaks to alis — "alis, …",
   "hey alis", "ask alis to …", "get alis to …", or otherwise invokes alis by name — wake up
@@ -92,22 +92,15 @@ full contract). Use the MCP `SearchSkills`/`LoadSkill` tools only when no shell 
   — run `alis …` (see **Executing DBD**). These are explicit instructions, not skill
   discovery; they don't need the wake word.
 
-- **Spec it → call `SpecIt` directly.** "spec it" / "spec it up", or a request to turn the
-  current session into a build specification → call the `SpecIt` tool DIRECTLY (do not route
-  through `SearchSkills`). It needs no arguments (session context is resolved server-side);
-  pass `build_spec` only when the user names an existing one to append to. Report the returned
-  BuildSpec back to the user.
-
 - **"build it" without "alis" does not wake discovery.** A bare "build it" on an
   already-established target means the DBD Build step → run `alis build`. To discover a build
   skill instead, the developer addresses alis ("alis, build …") or runs the `build it`
   command. When genuinely unclear, ask one concise question.
 
-## Executing DBD — prefer the `alis` CLI
+## Executing DBD — the `alis` CLI
 
-When you have a shell and the `alis` CLI is on `PATH`, **execute DBD through the CLI**, not the
-MCP `RunDefine` / `RunBuild` / `RunDeploy` tools. The CLI is deterministic, auto-detects
-context, and chains deterministic steps into one call:
+**Execute DBD through the `alis` CLI.** The CLI is deterministic, auto-detects context, and
+chains deterministic steps into one call:
 
 - **Define** (and publish packages): `alis define <pkg> --json --install`
 - **Build** (optionally deploy): `alis build <pkg> --json --deploy -e <env>`
@@ -146,12 +139,6 @@ service's directory.
   output, exit-codes, safety, context, workflows), `alis -h` for the command surface, and
   `alis <cmd> --help` for a command's flags. Treat that output as the source of truth; this
   primer and the skills deliberately do not restate it.
-
-**Fallback.** Use the MCP `RunDefine` / `RunBuild` / `RunDeploy` tools only when there is no
-shell available (remote / headless agents). They run the same operation server-side; `RunDefine`
-needs an explicit commit (never `HEAD`). The same rule covers the MCP skills tools
-(`SearchSkills` / `LoadSkill` / `LoadSkillResources` / `RequestSkill`): they hit the same
-registry as `alis skills` and exist for shell-less sessions.
 
 ## Google documentation — prefer the Developer Knowledge MCP
 

@@ -13,20 +13,18 @@ import { fileURLToPath } from "node:url"
  *   1. Injecting the DBD primer and a cwd-dependent "service context" block into
  *      the first message of each session (mirror of the Claude plugin's
  *      `load-primer.sh` + `inject-service-context.sh` SessionStart hooks).
- *   2. Injecting the opencode session id into the session-aware Alis MCP calls
- *      (LoadSkill / SpecIt / RunDefine / RunBuild / RunDeploy).
- *   3. Auto-approving clean, single `alis …` shell commands via `permission.ask`
+ *   2. Auto-approving clean, single `alis …` shell commands via `permission.ask`
  *      (mirror of `allow-alis-cli.sh`), with the same double-key carve-outs:
  *      `--confirm-production`, `--approve`, and `blocks|block uninstall --yes`
  *      always stay on a human prompt.
- *   4. Recording the pending `alis` command at `~/.alis/agent-approval.json` so
+ *   3. Recording the pending `alis` command at `~/.alis/agent-approval.json` so
  *      the alis CLI's approval gate can treat a plugin-auto-allowed command as a
  *      standing grant (permission_mode "auto-allow"; anything the human clicked
  *      through records "default").
- *   5. Exporting `ALIS_OPENCODE=1` into every shell command via `shell.env` — the
+ *   4. Exporting `ALIS_OPENCODE=1` into every shell command via `shell.env` — the
  *      env marker the alis CLI requires before trusting the approval record.
  *
- * The MCP server and the build-it / fix-it commands remain config
+ * The build-it / fix-it commands remain config
  * (see opencode.example.json and the README).
  *
  * ---------------------------------------------------------------------------
@@ -42,10 +40,6 @@ import { fileURLToPath } from "node:url"
  * into the first user message of each session. opencode exposes the working
  * directory to the plugin as `directory`; the block is computed once at load.
  */
-
-// Matches the Alis MCP tools that resolve server-side Context from the session id.
-// MCP tools are exposed to opencode with a server-name prefix, so match the suffix.
-const SESSION_AWARE_TOOL = /(?:^|[._-])(LoadSkill|SpecIt|RunDefine|RunBuild|RunDeploy)$/
 
 /**
  * Given a working directory, return the Alis Build service-context block to
@@ -269,27 +263,13 @@ export const AlisBuildPlugin: Plugin = async ({ directory, worktree }: any) => {
     },
 
     "tool.execute.before": async (input: any, output: any) => {
-      const toolName: string = input?.tool ?? ""
-
-      if (toolName === "bash") {
-        const cmd = String(output?.args?.command ?? "")
-        // Same conservative gate as the classifier: only a clean, single command
-        // whose first token is `alis` is worth recording.
-        if (cmd && !/[|&;<>`\n]|\$\(/.test(cmd) && cmd.trim().split(/\s+/)[0] === "alis") {
-          writeAgentApproval(cmd, input?.sessionID, autoAllowed.has(input?.callID ?? ""))
-        }
-        return
+      if (input?.tool !== "bash") return
+      const cmd = String(output?.args?.command ?? "")
+      // Same conservative gate as the classifier: only a clean, single command
+      // whose first token is `alis` is worth recording.
+      if (cmd && !/[|&;<>`\n]|\$\(/.test(cmd) && cmd.trim().split(/\s+/)[0] === "alis") {
+        writeAgentApproval(cmd, input?.sessionID, autoAllowed.has(input?.callID ?? ""))
       }
-
-      if (!SESSION_AWARE_TOOL.test(toolName)) return
-
-      const sessionID: string | undefined = input?.sessionID
-      if (!sessionID) return
-
-      // Merge session_id into the outgoing MCP arguments without clobbering
-      // anything the model already set.
-      const args = (output.args ??= {})
-      if (args.session_id == null) args.session_id = sessionID
     },
   }
 }

@@ -2,16 +2,12 @@
 
 **Connect [opencode](https://opencode.ai) to Alis Build.**
 
-Use this plugin to let opencode inspect Alis Build organisations, products, neurons,
-builds, deploys, and related workspace context — the opencode counterpart of the
+Use this plugin to let opencode work with Alis Build organisations, products, neurons,
+builds, and deploys through the `alis` CLI — the opencode counterpart of the
 [Alis Build Claude Code plugin](https://github.com/alis-build/claude-plugin).
 
 ## What You Get
 
-- A preconfigured opencode MCP server for `https://mcp.alis.build` with a static Alis
-  Build OAuth client (the Alis auth server does not support Dynamic Client Registration)
-- OAuth sign-in through Alis Build identity (handled by opencode)
-- Alis Build tools available inside opencode after sign-in
 - A standing Define → Build → Deploy primer injected by the plugin into the first
   message of every session, so the agent always knows the workflow, how to route
   requests (it wakes skill discovery when you address **alis**, CLI-first via
@@ -36,17 +32,15 @@ opencode and Claude Code expose the same capabilities through different mechanis
 
 | Claude Code plugin | opencode equivalent | Lives in |
 | --- | --- | --- |
-| `.mcp.json` (HTTP MCP + OAuth) | `mcp.api` (`type: "remote"` + `oauth.clientId`) | `opencode.json` |
 | `commands/*.md` | `command/*.md` or `command` config key | this repo / config |
 | `context/dbd-primer.md` via `SessionStart` hook | `chat.message` plugin hook (primer ships in the npm package) | `src/index.ts` |
 | `allow-alis-cli.sh` (`PreToolUse` Bash hook) | `permission.ask` plugin hook (+ `"alis *": "ask"` config so it fires) | `src/index.ts` |
 | `~/.alis/agent-approval.json` bridge | `tool.execute.before` (bash) + `shell.env` plugin hooks | `src/index.ts` |
-| `inject-skill-session-id.sh` (`PreToolUse` hook) | `tool.execute.before` plugin hook | `src/index.ts` |
 | `inject-service-context.sh` (`SessionStart` hook) | `chat.message` plugin hook | `src/index.ts` |
 | `.claude-plugin/marketplace.json` | npm package + config snippet | `package.json` |
 
-> opencode has **no `config` hook**, so a plugin cannot register MCP servers or
-> commands programmatically. That is why those are config, and why install is a config
+> opencode has **no `config` hook**, so a plugin cannot register commands
+> programmatically. That is why those are config, and why install is a config
 > snippet plus an npm package rather than a single command. The primer and the alis
 > approval logic, however, now live entirely in the plugin — no manual file installs.
 
@@ -55,8 +49,8 @@ opencode and Claude Code expose the same capabilities through different mechanis
 You need:
 
 - opencode installed
+- The `alis` CLI installed, on your `PATH`, and signed in (`alis login`)
 - An Alis Build account with access to the organisations and products you want to use
-- Network access to `https://mcp.alis.build` and the Alis Build identity provider
 
 ## Install
 
@@ -66,11 +60,10 @@ Merge the contents of [`opencode.example.json`](./opencode.example.json) into yo
 opencode config — `~/.config/opencode/opencode.json` for a global install, or
 `.opencode/opencode.json` (or `opencode.json` at the repo root) for a project install.
 
-It wires up four things: the `@alis-build/opencode-plugin` npm plugin, the `api` MCP
-server (with the static Alis Build OAuth client), the `/build-it` + `/fix-it`
-commands, and the `"alis *": "ask"` bash permission that routes `alis` commands
-through the plugin's strict approval hook. opencode installs the npm plugin
-automatically with Bun on next start.
+It wires up three things: the `@alis-build/opencode-plugin` npm plugin, the
+`/build-it` + `/fix-it` commands, and the `"alis *": "ask"` bash permission that
+routes `alis` commands through the plugin's strict approval hook. opencode installs
+the npm plugin automatically with Bun on next start.
 
 The primer ships inside the npm package and is injected by the plugin — there is no
 separate primer install step, and primer updates arrive with plugin upgrades.
@@ -89,18 +82,9 @@ must stay word-for-word identical — sync both when updating either.
 opencode
 ```
 
-## Sign In
-
-opencode handles the MCP OAuth flow using the static Alis Build client. On first use of
-an Alis tool it will prompt you to authenticate, or you can trigger it explicitly:
-
-```sh
-opencode mcp auth api
-```
-
 ## Use It
 
-After sign-in, ask opencode to use Alis Build:
+Ask opencode to use Alis Build:
 
 ```text
 alis, build it
@@ -139,8 +123,8 @@ opencode-plugin/
 ├── tsconfig.json
 ├── opencode.example.json   # config snippet to merge into opencode.json
 ├── src/
-│   └── index.ts            # plugin: primer + service context, session-id injection,
-│                           #   alis approval hook, agent-approval bridge, shell env
+│   └── index.ts            # plugin: primer + service context, alis approval hook,
+│                           #   agent-approval bridge, shell env
 ├── instructions/
 │   └── dbd-primer.md       # DBD primer (injected by the plugin; synced from claude-plugin)
 └── command/
