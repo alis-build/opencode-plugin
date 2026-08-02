@@ -44,8 +44,13 @@ This primer is the standing how-to guide for Alis Build work. It carries three t
   uses it; it resolves without error, so the only signal is the path shape. If the service you
   are editing still depends on the legacy package, mention it and offer the
   `dbd-migrate-to-neuron-protos` skill rather than extending the legacy usage.
-- Build a container image from a product repo commit. Docker build paths are relative to the
-  neuron folder (e.g. a top-level Dockerfile uses `.`, not `demo/v1`).
+- **Build runs from a pushed commit, never your working tree.** `alis build` resolves the
+  latest commit on the service's remote; edits that are uncommitted — or committed but not
+  pushed — are invisible to the build server, so a rebuild will reproduce the exact error you
+  just fixed. Commit and push first (source, Dockerfile, go.mod alike); when a rebuild fails
+  identically, compare the commit hash in the build output against your fix before
+  re-diagnosing. Docker build paths are relative to the neuron folder (e.g. a top-level
+  Dockerfile uses `.`, not `demo/v1`).
 - This connects the locked contract to real behavior.
 
 ## Deploy — provision and update the runtime
@@ -103,7 +108,8 @@ full contract).
 chains deterministic steps into one call:
 
 - **Define** (and publish packages): `alis define <pkg> --json --install`
-- **Build** (optionally deploy): `alis build <pkg> --json --deploy -e <env>`
+- **Build** (optionally deploy): `alis build <pkg> --json --deploy -e <env>` — builds the
+  latest *pushed* commit; commit and push fixes first
 - **Deploy**: `alis deploy <pkg> --json` (add `--version` / `-e <env>` as needed)
 - **Packages** (install / upgrade / add a service's language packages):
   `alis packages install|upgrade|add <pkg> --json` (add `--language go|node|python|dart` to
@@ -120,7 +126,7 @@ service's directory.
   the service's own Alis-defined package (`--all` for every package). Reserve direct
   package-manager commands for diagnostics after `alis packages` has run.
 
-- **Pass `--json` for agent-driven calls** and let the CLI resolve context (latest commit,
+- **Pass `--json` for agent-driven calls** and let the CLI resolve context (latest pushed commit,
   Dockerfile paths, single-environment target). The full machine contract — stdout/stderr
   split, NDJSON progress, `--async` + `alis operations wait`, exit codes — is documented in
   the CLI itself: `alis docs output` and `alis docs exit-codes`. Never use shell `sleep` /
