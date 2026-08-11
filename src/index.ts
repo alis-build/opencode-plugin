@@ -22,9 +22,17 @@ import { fileURLToPath } from "node:url"
  *      standing grant (permission_mode "auto-allow"; anything the human clicked
  *      through records "default").
  *   4. Exporting `ALIS_OPENCODE=1` into every shell command via `shell.env` — the
- *      env marker the alis CLI requires before trusting the approval record.
+ *      env marker the alis CLI requires before trusting the approval record —
+ *      plus `ALIS_SESSION_ID` when the hook input carries a session id.
+ *   5. Per-prompt ambient skill discovery via `chat.message` (mirror of the
+ *      Claude plugin's `suggest-skills.sh` UserPromptSubmit hook): inside an
+ *      alis.build workspace, each user message is piped as a JSON payload to
+ *      `alis skills suggest --hook --harness opencode`, and any plain-text
+ *      output is appended to the message as an <alis-skill-hint> block. Every
+ *      failure path (alis missing, spawn error, timeout, non-zero exit) is
+ *      swallowed — discovery must never break a prompt.
  *
- * The build-it / fix-it commands remain config
+ * The /discover and /capture commands remain config
  * (see opencode.example.json and the README).
  *
  * ---------------------------------------------------------------------------
@@ -200,12 +208,41 @@ function loadPrimer(): string | null {
   }
 }
 
-export const AlisBuildPlugin: Plugin = async ({ directory, worktree }: any) => {
+/** Hard cap on how long a per-prompt suggest call may delay the message. */
+const SUGGEST_TIMEOUT_MS = 1500
+
+export const AlisBuildPlugin: Plugin = async ({ directory, worktree, $ }: any) => {
   // The working directory is fixed for the life of the plugin (opencode loads
   // plugins per project), so compute the injected blocks once.
   const cwd: string = directory ?? worktree ?? ""
   const serviceContext = cwd ? buildServiceContext(cwd) : null
   const primer = loadPrimer()
+
+  /**
+   * Run `alis skills suggest` with the hook payload on stdin and return its
+   * trimmed stdout ("" when there is no suggestion). Uses the plugin context's
+   * Bun shell (`$`); `.nothrow()` keeps non-zero exits from throwing and
+   * `.quiet()` keeps the CLI's stdout out of the terminal. Any failure —
+   * including a missing alis binary — resolves to "".
+   */
+  const runSuggest = async (prompt: string, sessionID: string | undefined): Promise<string> => {
+    if (typeof $ !== "function") return ""
+    const payload = JSON.stringify({
+      session_id: sessionID ?? "",
+      prompt,
+      cwd,
+      permission_mode: "default",
+    })
+    const stdin = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(payload))
+        controller.close()
+      },
+    })
+    const out = await $`alis skills suggest --hook --harness opencode < ${stdin}`.quiet().nothrow()
+    if (out.exitCode !== 0) return ""
+    return out.text().trim()
+  }
 
   // Inject the blocks into the first user message of each session only.
   const injectedSessions = new Set<string>()
@@ -218,31 +255,67 @@ export const AlisBuildPlugin: Plugin = async ({ directory, worktree }: any) => {
 
   return {
     "chat.message": async (input: any, output: any) => {
-      if (!primer && !serviceContext) return
-
-      const sessionID: string | undefined =
-        input?.sessionID ?? output?.message?.sessionID ?? output?.message?.info?.sessionID
-      if (sessionID) {
-        if (injectedSessions.has(sessionID)) return
-        injectedSessions.add(sessionID)
-      } else {
-        if (injectedWithoutSessionId) return
-        injectedWithoutSessionId = true
-      }
-
       const parts: any[] | undefined = output?.parts
       if (!Array.isArray(parts)) return
 
-      const blocks: string[] = []
-      if (primer) blocks.push(`<alis-build-primer>\n${primer}\n</alis-build-primer>`)
-      if (serviceContext) blocks.push(`<alis-service-context>\n${serviceContext}\n</alis-service-context>`)
-      const block = blocks.join("\n\n")
+      const sessionID: string | undefined =
+        input?.sessionID ?? output?.message?.sessionID ?? output?.message?.info?.sessionID
 
-      const firstText = parts.find((p) => p && p.type === "text" && typeof p.text === "string")
-      if (firstText) {
-        firstText.text = `${block}\n\n${firstText.text}`
-      } else {
-        parts.unshift({ type: "text", text: block })
+      // Capture the user's raw prompt text BEFORE any injection mutates the
+      // parts — the suggest payload must carry the prompt, not the primer.
+      const promptText = parts
+        .filter((p) => p && p.type === "text" && typeof p.text === "string")
+        .map((p) => p.text)
+        .join("\n")
+        .trim()
+
+      // 1) Primer + service context, first user message of each session only.
+      if (primer || serviceContext) {
+        let firstMessage: boolean
+        if (sessionID) {
+          firstMessage = !injectedSessions.has(sessionID)
+          if (firstMessage) injectedSessions.add(sessionID)
+        } else {
+          firstMessage = !injectedWithoutSessionId
+          injectedWithoutSessionId = true
+        }
+        if (firstMessage) {
+          const blocks: string[] = []
+          if (primer) blocks.push(`<alis-build-primer>\n${primer}\n</alis-build-primer>`)
+          if (serviceContext) blocks.push(`<alis-service-context>\n${serviceContext}\n</alis-service-context>`)
+          const block = blocks.join("\n\n")
+
+          const firstText = parts.find((p) => p && p.type === "text" && typeof p.text === "string")
+          if (firstText) {
+            firstText.text = `${block}\n\n${firstText.text}`
+          } else {
+            parts.unshift({ type: "text", text: block })
+          }
+        }
+      }
+
+      // 2) Per-prompt ambient skill discovery, every user message with text.
+      // Gated to alis.build workspaces (ALIS_SUGGEST_ALWAYS=1 overrides); the
+      // CLI owns all further gating (wake phrases, dedupe, latency budget).
+      if (!promptText) return
+      if (!cwd.includes("/alis.build/") && process.env.ALIS_SUGGEST_ALWAYS !== "1") return
+      try {
+        const hint = await Promise.race([
+          runSuggest(promptText, sessionID).catch(() => ""),
+          new Promise<string>((resolve) => setTimeout(() => resolve(""), SUGGEST_TIMEOUT_MS)),
+        ])
+        if (!hint) return
+        const block = `<alis-skill-hint>\n${hint}\n</alis-skill-hint>`
+        const lastText = [...parts]
+          .reverse()
+          .find((p) => p && p.type === "text" && typeof p.text === "string")
+        if (lastText) {
+          lastText.text = `${lastText.text}\n\n${block}`
+        } else {
+          parts.push({ type: "text", text: block })
+        }
+      } catch {
+        // Discovery must never break a prompt.
       }
     },
 
@@ -256,10 +329,16 @@ export const AlisBuildPlugin: Plugin = async ({ directory, worktree }: any) => {
       }
     },
 
-    "shell.env": async (_input: any, output: { env: Record<string, string> }) => {
+    "shell.env": async (input: any, output: { env: Record<string, string> }) => {
       // The env marker the alis CLI requires before trusting an opencode-written
       // approval record (a stale record from another harness grants nothing).
       output.env.ALIS_OPENCODE = "1"
+      // The hook input carries an optional sessionID (plugin d.ts: shell.env
+      // input `{ cwd, sessionID?, callID? }`); surface it to the CLI when set.
+      const sessionID = input?.sessionID
+      if (typeof sessionID === "string" && sessionID) {
+        output.env.ALIS_SESSION_ID = sessionID
+      }
     },
 
     "tool.execute.before": async (input: any, output: any) => {

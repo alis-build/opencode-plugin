@@ -9,12 +9,20 @@ builds, and deploys through the `alis` CLI — the opencode counterpart of the
 ## What You Get
 
 - A standing Define → Build → Deploy primer injected by the plugin into the first
-  message of every session, so the agent always knows the workflow, how to route
-  requests (it wakes skill discovery when you address **alis**, CLI-first via
-  `alis skills search|load`), and how to run the `alis` CLI
+  message of every session, so the agent always knows the workflow, the skills
+  contract (discovery runs through `/discover` and ambient per-prompt suggestions;
+  direct DBD commands run the CLI with no skill), and how to run the `alis` CLI
 - Workspace service context: inside `~/alis.build/<org>/{build,define}/…` the plugin
   injects the package id and a pointer to the definitions ⇄ implementation counterpart
-- `/build-it` and `/fix-it` workflow commands
+- `/discover` and `/capture` workflow commands: `/discover` finds and loads the right
+  Alis Build skill from the registry for the task at hand; `/capture` saves work just
+  completed in the session as a reusable team skill
+- Ambient per-prompt skill suggestions: inside an alis.build workspace the plugin pipes
+  each user message to `alis skills suggest --hook --harness opencode` (a purely local
+  ~40ms call) and appends any suggestion to the message as an `<alis-skill-hint>` block.
+  Wake phrases ("alis, …", "capture this as a skill") yield deterministic routing
+  instructions; other prompts get hard-gated one-liners at most, and every failure path
+  is silent
 - Strict `alis` CLI auto-approval via the plugin's `permission.ask` hook: clean, single
   `alis …` commands run without a prompt; chained/redirected commands
   (`alis define && rm -rf`) and the double-key carve-outs (`--confirm-production`,
@@ -32,17 +40,20 @@ opencode and Claude Code expose the same capabilities through different mechanis
 
 | Claude Code plugin | opencode equivalent | Lives in |
 | --- | --- | --- |
-| `commands/*.md` | `command/*.md` or `command` config key | this repo / config |
+| `skills/discover` + `skills/capture` (description-triggered router skills) | `/discover` + `/capture` commands (`command/*.md` or `command` config key) | this repo / config |
+| `hooks/suggest-skills.sh` (`UserPromptSubmit` hook → `alis skills suggest`) | `chat.message` plugin hook appending an `<alis-skill-hint>` block | `src/index.ts` |
 | `context/dbd-primer.md` via `SessionStart` hook | `chat.message` plugin hook (primer ships in the npm package) | `src/index.ts` |
 | `allow-alis-cli.sh` (`PreToolUse` Bash hook) | `permission.ask` plugin hook (+ `"alis *": "ask"` config so it fires) | `src/index.ts` |
 | `~/.alis/agent-approval.json` bridge | `tool.execute.before` (bash) + `shell.env` plugin hooks | `src/index.ts` |
 | `inject-service-context.sh` (`SessionStart` hook) | `chat.message` plugin hook | `src/index.ts` |
 | `.claude-plugin/marketplace.json` | npm package + config snippet | `package.json` |
 
-> opencode has **no `config` hook**, so a plugin cannot register commands
-> programmatically. That is why those are config, and why install is a config
-> snippet plus an npm package rather than a single command. The primer and the alis
-> approval logic, however, now live entirely in the plugin — no manual file installs.
+> The commands ship as config plus markdown files rather than being registered by
+> the plugin: opencode does have a `config` hook, but keeping the command text in
+> your config (and in `command/*.md`) keeps it visible and editable, and this repo's
+> contract is that the inline copies stay word-for-word identical to the files. The
+> primer and the alis approval logic live entirely in the plugin — no manual file
+> installs.
 
 ## Before You Start
 
@@ -61,7 +72,7 @@ opencode config — `~/.config/opencode/opencode.json` for a global install, or
 `.opencode/opencode.json` (or `opencode.json` at the repo root) for a project install.
 
 It wires up three things: the `@alis-build/opencode-plugin` npm plugin, the
-`/build-it` + `/fix-it` commands, and the `"alis *": "ask"` bash permission that
+`/discover` + `/capture` commands, and the `"alis *": "ask"` bash permission that
 routes `alis` commands through the plugin's strict approval hook. opencode installs
 the npm plugin automatically with Bun on next start.
 
@@ -70,9 +81,9 @@ separate primer install step, and primer updates arrive with plugin upgrades.
 
 ### 2. (Optional) Install the commands as files
 
-The `command` block in the config defines `/build-it` and `/fix-it` inline, so this
-step is optional. If you prefer file-based commands, copy `command/build-it.md` and
-`command/fix-it.md` into `~/.config/opencode/command/` (global) or `.opencode/command/`
+The `command` block in the config defines `/discover` and `/capture` inline, so this
+step is optional. If you prefer file-based commands, copy `command/discover.md` and
+`command/capture.md` into `~/.config/opencode/command/` (global) or `.opencode/command/`
 (project) and drop the `command` block from your config. The file and inline versions
 must stay word-for-word identical — sync both when updating either.
 
@@ -87,11 +98,15 @@ opencode
 Ask opencode to use Alis Build:
 
 ```text
-alis, build it
+/discover
 ```
 
 ```text
-alis, fix it
+alis, add tracing to my service
+```
+
+```text
+capture this as a skill
 ```
 
 ```text
@@ -102,7 +117,9 @@ Use Alis Build to list the organisations I can access.
 Show recent builds for product os in organisation alis.
 ```
 
-The `/build-it` and `/fix-it` commands run the same skill-discovery router.
+`/discover` runs the skill-discovery router explicitly; inside an alis.build workspace
+the per-prompt suggestions route wake phrases like "alis, …" and "capture this as a
+skill" (the `/capture` flow) automatically.
 
 ### `alis` CLI auto-approval
 
@@ -123,21 +140,27 @@ opencode-plugin/
 ├── tsconfig.json
 ├── opencode.example.json   # config snippet to merge into opencode.json
 ├── src/
-│   └── index.ts            # plugin: primer + service context, alis approval hook,
-│                           #   agent-approval bridge, shell env
+│   └── index.ts            # plugin: primer + service context, per-prompt skill
+│                           #   suggestions, alis approval hook, agent-approval
+│                           #   bridge, shell env
 ├── instructions/
 │   └── dbd-primer.md       # DBD primer (injected by the plugin; synced from claude-plugin)
 └── command/
-    ├── build-it.md
-    └── fix-it.md
+    ├── discover.md
+    └── capture.md
 ```
 
 ## Primer sync
 
 `instructions/dbd-primer.md` is synced from the canonical primer in the Alis Build
-Claude Code plugin (`claude-plugin/plugins/alis-build/context/dbd-primer.md`). The only
-local difference is the closing sentence of the Google documentation section (opencode
-has no `/connect-google` command). Sync the body on each claude-plugin primer release.
+Claude Code plugin (`claude-plugin/plugins/alis-build/context/dbd-primer.md`) — currently
+the dieted v0.17.0 primer, whose "Skills — discovery is native" section replaced the old
+wake-word routing prose. The local differences are harness adaptations only: the skills
+contract (preamble item 2 and the Skills section) names this plugin's `/discover` /
+`/capture` commands and the per-prompt suggestions instead of Claude's `alis-build:*`
+skills, and the closing sentence of the Google documentation section omits
+`/connect-google` (opencode has no such command). Sync the body on each claude-plugin
+primer release.
 
 ## License
 

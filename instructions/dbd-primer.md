@@ -7,8 +7,8 @@ Alis Build task, and walk the user through DBD rather than handing over a discon
 This primer is the standing how-to guide for Alis Build work. It carries three things:
 
 1. The **mental model** — what DBD is and where things live on disk.
-2. The **routing contract** — saying "alis" wakes skill discovery (with room for a light
-   proactive suggestion on clearly platform-shaped work); when to run a command directly.
+2. The **skills contract** — discovery runs through the `/discover` command and ambient
+   per-prompt suggestions; direct DBD commands run the CLI without a skill.
 3. The **execution contract** — how to actually run Define / Build / Deploy.
 
 > The `alis` CLI provides the *tools*; this primer provides *how to operate*. When the CLI's
@@ -61,46 +61,18 @@ This primer is the standing how-to guide for Alis Build work. It carries three t
 - Deploy makes the service reachable infrastructure (commonly Cloud Run plus supporting resources).
 - Validate end-to-end via the generated playground, usually `<neuron>/.playground/main_test.go`.
 
-## Routing — say "alis" to wake the skill router
+## Skills — discovery is native
 
-Skill discovery is **opt-in, gated on the wake word.** What wakes the routing flow is the
-developer *speaking to alis* — not the shape of the request. Do **NOT** run a skills search on
-ordinary build/fix/add-sounding prompts; firing it on every functional-looking message floods
-the session. Wait to be addressed (with one narrow exception below).
+Skill discovery now runs through the harness's own surfaces. The `/discover` command finds
+and loads the right Alis Build skill for the task, and a per-prompt hook surfaces ambient
+skill suggestions on the user's own words when the task touches the platform — no wake word
+is needed. Once a skill is loaded, it owns execution.
 
-The skill registry is reached through the CLI: `alis skills search "<query>" --json` to
-discover, `alis skills load <id> --json` to load, `alis skills resource <id> <path> --json`
-for referenced files, `alis skills request` to propose a new one (`alis docs skills` has the
-full contract).
+Direct DBD commands ("define it", "build it", "deploy it" on an already-known target) are
+deterministic — run the `alis` CLI directly (see **Executing DBD**); no skill is needed.
 
-- **Addressed to alis → wake up and route.** When the developer speaks to alis — "alis, …",
-  "hey alis", "ask alis to …", "get alis to …", or otherwise invokes alis by name — wake up
-  and find a skill: work out the intended outcome (ask ONE concise question only if it is
-  genuinely ambiguous), run `alis skills search "<intended outcome>" --json` FIRST, present
-  the matches (id, what each does, when to choose it), then `alis skills load <id>` and
-  follow that skill — the loaded skill owns execution. **Do NOT inspect, write, or edit code,
-  run Define / Build / Deploy, or make commits before a skill is loaded.** The search is the
-  discovery mechanism — do not fall back to listing the whole catalogue; if nothing fits, say
-  so and offer `alis skills request`. Explicitly running the `build it` / `fix it` command is
-  itself a way to address alis and invoke this flow.
-
-- **Not addressed to alis → just respond.** Handle the request directly, or ask what they
-  need — do not auto-route it through skill discovery. One narrow exception: when the request
-  is clearly Alis Build platform work (landing zones, products, neurons, blocks, DBD, platform
-  infra) and no skill is loaded yet, you MAY run one `alis skills search` and *offer* the top
-  match — "there's a skill for this; want me to load it?" — then continue however the
-  developer answers. Never auto-load the skill, never block the work on the offer, and never
-  fire the search on generic coding prompts that merely happen inside an Alis repo.
-
-- **Direct DBD commands → run the CLI, no skill needed.** "define it", "deploy it", "ship it",
-  "run define/build/deploy", "define and install" on an already-known target are deterministic
-  — run `alis …` (see **Executing DBD**). These are explicit instructions, not skill
-  discovery; they don't need the wake word.
-
-- **"build it" without "alis" does not wake discovery.** A bare "build it" on an
-  already-established target means the DBD Build step → run `alis build`. To discover a build
-  skill instead, the developer addresses alis ("alis, build …") or runs the `build it`
-  command. When genuinely unclear, ask one concise question.
+After solving something new by hand, the user can say "capture this as a skill" and the
+`/capture` command saves it as a reusable skill for their team.
 
 ## Executing DBD — the `alis` CLI
 
