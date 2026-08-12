@@ -1,6 +1,6 @@
 {
   "name": "@alis-build/opencode-plugin",
-  "version": "0.11.0",
+  "version": "0.11.1",
   "description": "Connect opencode to Alis Build through the alis CLI, workflow commands, and the Define-Build-Deploy primer.",
   "type": "module",
   "main": "src/index.ts",
@@ -39,6 +39,7 @@
     "typescript": "^5"
   },
   "scripts": {
+    "test": "node --test --experimental-strip-types tests/*.test.ts",
     "typecheck": "tsc --noEmit"
   }
 }

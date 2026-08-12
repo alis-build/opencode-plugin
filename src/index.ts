@@ -1,4 +1,5 @@
 import type { Plugin } from "@opencode-ai/plugin"
+import { spawn } from "node:child_process"
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
@@ -10,21 +11,24 @@ import { fileURLToPath } from "node:url"
  * This file ships the behaviour that needs code — the opencode mirror of the
  * Claude Code plugin's hooks:
  *
- *   1. Injecting the DBD primer and a cwd-dependent "service context" block into
+ *   1. Refreshing the local skills catalog at plugin startup with the explicit
+ *      legacy-safe `alis skills sync --cache-only` contract. This never installs
+ *      or prunes native per-skill entries.
+ *   2. Injecting the DBD primer and a cwd-dependent "service context" block into
  *      the first message of each session (mirror of the Claude plugin's
  *      `load-primer.sh` + `inject-service-context.sh` SessionStart hooks).
- *   2. Auto-approving clean, single `alis …` shell commands via `permission.ask`
+ *   3. Auto-approving clean, single `alis …` shell commands via `permission.ask`
  *      (mirror of `allow-alis-cli.sh`), with the same double-key carve-outs:
  *      `--confirm-production`, `--approve`, and `blocks|block uninstall --yes`
  *      always stay on a human prompt.
- *   3. Recording the pending `alis` command at `~/.alis/agent-approval.json` so
+ *   4. Recording the pending `alis` command at `~/.alis/agent-approval.json` so
  *      the alis CLI's approval gate can treat a plugin-auto-allowed command as a
  *      standing grant (permission_mode "auto-allow"; anything the human clicked
  *      through records "default").
- *   4. Exporting `ALIS_OPENCODE=1` into every shell command via `shell.env` — the
+ *   5. Exporting `ALIS_OPENCODE=1` into every shell command via `shell.env` — the
  *      env marker the alis CLI requires before trusting the approval record —
  *      plus `ALIS_SESSION_ID` when the hook input carries a session id.
- *   5. Per-prompt ambient skill discovery via `chat.message` (mirror of the
+ *   6. Per-prompt ambient skill discovery via `chat.message` (mirror of the
  *      Claude plugin's `suggest-skills.sh` UserPromptSubmit hook): inside an
  *      alis.build workspace, each user message is piped as a JSON payload to
  *      `alis skills suggest --hook --harness opencode`, and any plain-text
@@ -211,7 +215,37 @@ function loadPrimer(): string | null {
 /** Hard cap on how long a per-prompt suggest call may delay the message. */
 const SUGGEST_TIMEOUT_MS = 1500
 
+export const CATALOG_SYNC_ARGS = ["skills", "sync", "--cache-only"] as const
+
+type CatalogSyncChild = {
+  on: (event: "error", listener: () => void) => unknown
+  unref: () => void
+}
+
+type CatalogSyncSpawner = (
+  command: string,
+  args: readonly string[],
+  options: { detached: true; stdio: "ignore" },
+) => CatalogSyncChild
+
+/**
+ * Refresh catalog metadata without delaying plugin startup. The explicit
+ * --cache-only flag keeps this safe with older alis CLIs whose default sync
+ * installed native skills. Every failure is swallowed by contract.
+ */
+export function startCatalogSync(spawnProcess: CatalogSyncSpawner = spawn as unknown as CatalogSyncSpawner): void {
+  try {
+    const child = spawnProcess("alis", CATALOG_SYNC_ARGS, { detached: true, stdio: "ignore" })
+    child.on("error", () => {})
+    child.unref()
+  } catch {
+    // Catalog refresh is best-effort and must never break plugin startup.
+  }
+}
+
 export const AlisBuildPlugin: Plugin = async ({ directory, worktree, $ }: any) => {
+  startCatalogSync()
+
   // The working directory is fixed for the life of the plugin (opencode loads
   // plugins per project), so compute the injected blocks once.
   const cwd: string = directory ?? worktree ?? ""

@@ -23,6 +23,8 @@ builds, and deploys through the `alis` CLI — the opencode counterpart of the
   Wake phrases ("alis, …", "capture this as a skill") yield deterministic routing
   instructions; other prompts get hard-gated one-liners at most, and every failure path
   is silent
+- Catalog metadata refreshed quietly at plugin startup with `alis skills sync --cache-only`;
+  the plugin never installs or prunes native user skills
 - Strict `alis` CLI auto-approval via the plugin's `permission.ask` hook: clean, single
   `alis …` commands run without a prompt; chained/redirected commands
   (`alis define && rm -rf`) and the double-key carve-outs (`--confirm-production`,
@@ -42,6 +44,7 @@ opencode and Claude Code expose the same capabilities through different mechanis
 | --- | --- | --- |
 | `skills/discover` + `skills/capture` (description-triggered router skills) | `/discover` + `/capture` commands (`command/*.md` or `command` config key) | this repo / config |
 | `hooks/suggest-skills.sh` (`UserPromptSubmit` hook → `alis skills suggest`) | `chat.message` plugin hook appending an `<alis-skill-hint>` block | `src/index.ts` |
+| `hooks/sync-skills.sh` (`SessionStart`, catalog only) | detached plugin-startup refresh using `--cache-only` | `src/index.ts` |
 | `context/dbd-primer.md` via `SessionStart` hook | `chat.message` plugin hook (primer ships in the npm package) | `src/index.ts` |
 | `allow-alis-cli.sh` (`PreToolUse` Bash hook) | `permission.ask` plugin hook (+ `"alis *": "ask"` config so it fires) | `src/index.ts` |
 | `~/.alis/agent-approval.json` bridge | `tool.execute.before` (bash) + `shell.env` plugin hooks | `src/index.ts` |
@@ -154,7 +157,7 @@ opencode-plugin/
 
 `instructions/dbd-primer.md` is synced from the canonical primer in the Alis Build
 Claude Code plugin (`claude-plugin/plugins/alis-build/context/dbd-primer.md`) — currently
-the dieted v0.17.0 primer, whose "Skills — discovery is native" section replaced the old
+the v0.17.2 primer, whose "Skills — discovery is native" section replaced the old
 wake-word routing prose. The local differences are harness adaptations only: the skills
 contract (preamble item 2 and the Skills section) names this plugin's `/discover` /
 `/capture` commands and the per-prompt suggestions instead of Claude's `alis-build:*`
