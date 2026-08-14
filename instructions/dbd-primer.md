@@ -66,9 +66,9 @@ This primer is the standing how-to guide for Alis Build work. It carries three t
 Skill discovery now runs through the harness's own surfaces. The `/discover` command finds
 and loads the right Alis Build skill for the task, and a per-prompt hook surfaces ambient
 skill suggestions on the user's own words when the task touches the platform — no wake word
-is needed. Plugin startup refreshes catalog metadata only; it never installs or prunes native
-per-skill entries. A user may explicitly opt into those with `alis skills sync --native`.
-Once a skill is loaded, it owns execution.
+is needed. Plugin startup refreshes catalog metadata only — skills need no local files to
+be discoverable and load live from the registry when used; `alis skills install <id>`
+stores a complete local copy. Once a skill is loaded, it owns execution.
 
 Direct DBD commands ("define it", "build it", "deploy it" on an already-known target) are
 deterministic — run the `alis` CLI directly (see **Executing DBD**); no skill is needed.
