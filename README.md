@@ -10,19 +10,25 @@ builds, and deploys through the `alis` CLI — the opencode counterpart of the
 
 - A standing Define → Build → Deploy primer injected by the plugin into the first
   message of every session, so the agent always knows the workflow, the skills
-  contract (discovery runs through `/discover` and ambient per-prompt suggestions;
-  direct DBD commands run the CLI with no skill), and how to run the `alis` CLI
+  contract (quiet, local-first discovery through `/discover` and ambient per-prompt
+  suggestions; direct DBD commands run the CLI with no skill), and how to run the
+  `alis` CLI
 - Workspace service context: inside `~/alis.build/<org>/{build,define}/…` the plugin
   injects the package id and a pointer to the definitions ⇄ implementation counterpart
-- `/discover` and `/capture` workflow commands: `/discover` finds and loads the right
-  Alis Build skill from the registry for the task at hand; `/capture` saves work just
-  completed in the session as a reusable team skill
-- Ambient per-prompt skill suggestions: inside an alis.build workspace the plugin pipes
-  each user message to `alis skills suggest --hook --harness opencode` (a purely local
-  ~40ms call) and appends any suggestion to the message as an `<alis-skill-hint>` block.
-  Wake phrases ("alis, …", "capture this as a skill") yield deterministic routing
-  instructions; other prompts get hard-gated one-liners at most, and every failure path
-  is silent
+- `/discover` and `/capture` workflow commands: `/discover` probes the local catalog
+  first (`alis skills suggest --json`, ~40ms, no network), loads a registry skill only
+  on a distinctive match, and stays silent otherwise (registry `search` is reserved for
+  explicit "find me a skill" asks); `/capture` saves work just completed in the session
+  as a reusable team skill
+- Ambient per-prompt skill suggestions: the plugin pipes user messages to
+  `alis skills suggest --hook --harness opencode` (a purely local ~40ms call) and appends
+  any suggestion to the message as an `<alis-skill-hint>` block. Wake phrases ("alis, …",
+  "capture this as a skill") yield deterministic routing instructions and work from any
+  directory; other prompts get at most one confidence-gated one-liner (the CLI keys on
+  distinctive id/name-token evidence, so generic Makefile/rename/debug prompts stay
+  silent), and every failure path is silent. Inside an alis.build workspace every prompt
+  reaches the CLI; elsewhere a cheap prefilter forwards only prompts that could carry a
+  wake phrase (`ALIS_SUGGEST_ALWAYS=1` disables the prefilter)
 - Catalog metadata refreshed quietly at plugin startup with `alis skills sync --cache-only`;
   the plugin never installs or prunes native user skills
 - Strict `alis` CLI auto-approval via the plugin's `permission.ask` hook: clean, single
@@ -120,9 +126,9 @@ Use Alis Build to list the organisations I can access.
 Show recent builds for product os in organisation alis.
 ```
 
-`/discover` runs the skill-discovery router explicitly; inside an alis.build workspace
-the per-prompt suggestions route wake phrases like "alis, …" and "capture this as a
-skill" (the `/capture` flow) automatically.
+`/discover` runs the skill-discovery router explicitly; the per-prompt suggestions route
+wake phrases like "alis, …" and "capture this as a skill" (the `/capture` flow)
+automatically, from any directory.
 
 ### `alis` CLI auto-approval
 
@@ -157,13 +163,13 @@ opencode-plugin/
 
 `instructions/dbd-primer.md` is synced from the canonical primer in the Alis Build
 Claude Code plugin (`claude-plugin/plugins/alis-build/context/dbd-primer.md`) — currently
-the v0.17.2 primer, whose "Skills — discovery is native" section replaced the old
-wake-word routing prose. The local differences are harness adaptations only: the skills
-contract (preamble item 2 and the Skills section) names this plugin's `/discover` /
-`/capture` commands and the per-prompt suggestions instead of Claude's `alis-build:*`
-skills, and the closing sentence of the Google documentation section omits
-`/connect-google` (opencode has no such command). Sync the body on each claude-plugin
-primer release.
+the v0.19.0 primer, whose "Skills — discovery is native and quiet" section describes
+local-first, confidence-gated discovery and whose Executing DBD section carries the
+"Diagnose before re-running" block and the `.playground` hidden+gitignored gotcha. The
+local differences are harness adaptations only: the Skills section names this plugin's
+`/discover` / `/capture` commands and the per-prompt suggestions instead of Claude's
+`alis-build:*` skills, and the Google documentation section omits `/connect-google`
+(opencode has no such command). Sync the body on each claude-plugin primer release.
 
 ## License
 

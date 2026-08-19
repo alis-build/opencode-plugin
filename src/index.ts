@@ -29,12 +29,18 @@ import { fileURLToPath } from "node:url"
  *      env marker the alis CLI requires before trusting the approval record —
  *      plus `ALIS_SESSION_ID` when the hook input carries a session id.
  *   6. Per-prompt ambient skill discovery via `chat.message` (mirror of the
- *      Claude plugin's `suggest-skills.sh` UserPromptSubmit hook): inside an
- *      alis.build workspace, each user message is piped as a JSON payload to
+ *      Claude plugin's `suggest-skills.sh` UserPromptSubmit hook): each user
+ *      message is piped as a JSON payload to
  *      `alis skills suggest --hook --harness opencode`, and any plain-text
- *      output is appended to the message as an <alis-skill-hint> block. Every
- *      failure path (alis missing, spawn error, timeout, non-zero exit) is
- *      swallowed — discovery must never break a prompt.
+ *      output is appended to the message as an <alis-skill-hint> block. Inside
+ *      an alis.build workspace every prompt goes to the CLI; elsewhere a cheap
+ *      prefilter forwards only prompts that could carry a wake phrase
+ *      ("alis, …", "capture this as a skill"), so explicit addresses work from
+ *      any directory. The CLI owns all real gating — wake-phrase regexes,
+ *      per-session caps, and the distinctive-score confidence gate that keeps
+ *      ambient one-liners off generic prompts. Every failure path (alis
+ *      missing, spawn error, timeout, non-zero exit) is swallowed — discovery
+ *      must never break a prompt.
  *
  * The /discover and /capture commands remain config
  * (see opencode.example.json and the README).
@@ -215,6 +221,19 @@ function loadPrimer(): string | null {
 /** Hard cap on how long a per-prompt suggest call may delay the message. */
 const SUGGEST_TIMEOUT_MS = 1500
 
+/**
+ * Should this prompt be forwarded to `alis skills suggest`? Inside an
+ * alis.build workspace: always. Elsewhere: only when the prompt could carry a
+ * wake phrase ("alis, …", "capture this as a skill") — a loose lexical
+ * prefilter; the CLI's strict regexes make the actual decision.
+ * ALIS_SUGGEST_ALWAYS=1 disables the prefilter.
+ */
+export function shouldRunSuggest(cwd: string, prompt: string, env: Record<string, string | undefined> = process.env): boolean {
+  if (cwd.includes("/alis.build/")) return true
+  if (env.ALIS_SUGGEST_ALWAYS === "1") return true
+  return /alis|skill/i.test(prompt)
+}
+
 export const CATALOG_SYNC_ARGS = ["skills", "sync", "--cache-only"] as const
 
 type CatalogSyncChild = {
@@ -329,10 +348,11 @@ export const AlisBuildPlugin: Plugin = async ({ directory, worktree, $ }: any) =
       }
 
       // 2) Per-prompt ambient skill discovery, every user message with text.
-      // Gated to alis.build workspaces (ALIS_SUGGEST_ALWAYS=1 overrides); the
-      // CLI owns all further gating (wake phrases, dedupe, latency budget).
+      // Inside a workspace the CLI sees every prompt; elsewhere only prompts
+      // that could carry a wake phrase are forwarded. The CLI owns all real
+      // gating (wake phrases, dedupe, confidence, latency budget).
       if (!promptText) return
-      if (!cwd.includes("/alis.build/") && process.env.ALIS_SUGGEST_ALWAYS !== "1") return
+      if (!shouldRunSuggest(cwd, promptText)) return
       try {
         const hint = await Promise.race([
           runSuggest(promptText, sessionID).catch(() => ""),
