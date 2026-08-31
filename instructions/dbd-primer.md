@@ -111,6 +111,11 @@ service's directory.
   credential error such as `invalid_grant`), it is not fixable in the repo: report it and
   offer `alis support send-message` / `send-session` instead of retrying or scraping build
   consoles.
+- **Ideate context by reference.** When a conversation, support ticket or copied snippet
+  references an Alis Ideate project (`ideas/<id>`), run `alis ideate context <id>` first —
+  one markdown document with everything the project holds (brief, contributions,
+  synthesised documents). Dig further with `alis ideate specs|spec|stream|find`
+  (`alis docs ideate`).
 - **Auth recovery.** If a git push/pull to an Alis remote fails with an auth error, run
   `alis authorise <org>.<product> --json` (alias: `alis a`) once and retry — it installs the
   auto-refreshing Alis git credential helper and clears stale tokens. It is a one-time repair,
