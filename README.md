@@ -12,7 +12,11 @@ builds, and deploys through the `alis` CLI — the opencode counterpart of the
   message of every session, so the agent always knows the workflow, the skills
   contract (quiet, local-first discovery through `/discover` and ambient per-prompt
   suggestions; direct DBD commands run the CLI with no skill), and how to run the
-  `alis` CLI
+  `alis` CLI. The primer is workspace-gated: sessions whose working directory sits
+  inside an alis.build workspace get the full primer; outside a workspace, a machine
+  with the `alis` CLI installed gets a compressed digest so wake-word skill routing
+  keeps minimal context; a machine with neither gets nothing — zero tokens for
+  unrelated projects. `ALIS_PRIMER=full|digest|off` overrides the gate
 - Workspace service context: inside `~/alis.build/<org>/{build,define}/…` the plugin
   injects the package id and a pointer to the definitions ⇄ implementation counterpart
 - `/discover` and `/capture` workflow commands: `/discover` probes the local catalog
@@ -51,7 +55,7 @@ opencode and Claude Code expose the same capabilities through different mechanis
 | `skills/discover` + `skills/capture` (description-triggered router skills) | `/discover` + `/capture` commands (`command/*.md` or `command` config key) | this repo / config |
 | `hooks/suggest-skills.sh` (`UserPromptSubmit` hook → `alis skills suggest`) | `chat.message` plugin hook appending an `<alis-skill-hint>` block | `src/index.ts` |
 | `hooks/sync-skills.sh` (`SessionStart`, catalog only) | detached plugin-startup refresh using `--cache-only` | `src/index.ts` |
-| `context/dbd-primer.md` via `SessionStart` hook | `chat.message` plugin hook (primer ships in the npm package) | `src/index.ts` |
+| `context/dbd-primer.md` + `context/dbd-digest.md` via workspace-gated `load-primer.sh` (`SessionStart`) | gated `chat.message` plugin hook (primer and digest ship in the npm package) | `src/index.ts` |
 | `allow-alis-cli.sh` (`PreToolUse` Bash hook) | `permission.ask` plugin hook (+ `"alis *": "ask"` config so it fires) | `src/index.ts` |
 | `~/.alis/agent-approval.json` bridge | `tool.execute.before` (bash) + `shell.env` plugin hooks | `src/index.ts` |
 | `inject-service-context.sh` (`SessionStart` hook) | `chat.message` plugin hook | `src/index.ts` |
@@ -153,7 +157,8 @@ opencode-plugin/
 │                           #   suggestions, alis approval hook, agent-approval
 │                           #   bridge, shell env
 ├── instructions/
-│   └── dbd-primer.md       # DBD primer (injected by the plugin; synced from claude-plugin)
+│   ├── dbd-primer.md       # DBD primer (workspace-gated injection; synced from claude-plugin)
+│   └── dbd-digest.md       # compressed digest for CLI-only sessions outside a workspace
 └── command/
     ├── discover.md
     └── capture.md
@@ -161,15 +166,18 @@ opencode-plugin/
 
 ## Primer sync
 
-`instructions/dbd-primer.md` is synced from the canonical primer in the Alis Build
-Claude Code plugin (`claude-plugin/plugins/alis-build/context/dbd-primer.md`) — currently
-the v0.19.0 primer, whose "Skills — discovery is native and quiet" section describes
-local-first, confidence-gated discovery and whose Executing DBD section carries the
-"Diagnose before re-running" block and the `.playground` hidden+gitignored gotcha. The
-local differences are harness adaptations only: the Skills section names this plugin's
-`/discover` / `/capture` commands and the per-prompt suggestions instead of Claude's
-`alis-build:*` skills, and the Google documentation section omits `/connect-google`
-(opencode has no such command). Sync the body on each claude-plugin primer release.
+`instructions/dbd-primer.md` and `instructions/dbd-digest.md` are synced from the
+canonical primer and digest in the Alis Build Claude Code plugin
+(`claude-plugin/plugins/alis-build/context/dbd-primer.md` and `dbd-digest.md`) —
+currently the v0.21.0 rewrite: a condensed Define section, the legacy-proto-import
+guidance cut to a three-line pointer at the `dbd-migrate-to-neuron-protos` skill, a
+shrunk Skills section (the discovery contract lives in the discovery surface itself),
+and an Executing DBD section carrying the stdout/stderr `--json` contract, the
+no-`sleep`-polling rule (`alis operations wait`), and the never-hand-edit-dependency-pins
+rule (`alis packages install|upgrade`). The local differences are harness adaptations
+only: the Skills sections name this plugin's `/discover` / `/capture` commands, the
+ambient per-prompt suggestions, and the `<alis-skill-hint>` block instead of Claude's
+`alis-build:*` skills. Sync both bodies on each claude-plugin primer release.
 
 ## License
 

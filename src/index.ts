@@ -16,7 +16,15 @@ import { fileURLToPath } from "node:url"
  *      or prunes native per-skill entries.
  *   2. Injecting the DBD primer and a cwd-dependent "service context" block into
  *      the first message of each session (mirror of the Claude plugin's
- *      `load-primer.sh` + `inject-service-context.sh` SessionStart hooks).
+ *      `load-primer.sh` + `inject-service-context.sh` SessionStart hooks). The
+ *      primer is workspace-gated like the Claude hook: the full primer
+ *      (instructions/dbd-primer.md) only when the session's working directory
+ *      sits inside an alis.build workspace; the compressed digest
+ *      (instructions/dbd-digest.md) when the `alis` CLI is on PATH but the
+ *      directory is not; nothing otherwise — zero tokens for unrelated
+ *      projects. ALIS_PRIMER=full|digest|off overrides the gate, and the
+ *      CLI-presence probe (a PATH scan) runs lazily and is cached for the
+ *      life of the plugin.
  *   3. Auto-approving clean, single `alis …` shell commands via `permission.ask`
  *      (mirror of `allow-alis-cli.sh`), with the same double-key carve-outs:
  *      `--confirm-production`, `--approve`, and `blocks|block uninstall --yes`
@@ -207,15 +215,82 @@ function writeAgentApproval(command: string, sessionID: string | undefined, auto
   }
 }
 
-/** Load the DBD primer shipped inside this package, or null when unreadable. */
-function loadPrimer(): string | null {
+/** Load a markdown file shipped inside this package, or null when unreadable/empty. */
+function loadInstruction(name: string): string | null {
   try {
     const here = dirname(fileURLToPath(import.meta.url))
-    const text = readFileSync(join(here, "..", "instructions", "dbd-primer.md"), "utf8").trim()
+    const text = readFileSync(join(here, "..", "instructions", name), "utf8").trim()
     return text.length ? text : null
   } catch {
     return null
   }
+}
+
+export type PrimerMode = "full" | "digest" | "off"
+
+/** Is `dir` inside (or exactly at the root of) an alis.build workspace? */
+export function inAlisWorkspace(dir: string): boolean {
+  return /\/alis\.build(\/|$)/.test(dir)
+}
+
+/**
+ * Scan PATH for an `alis` executable. Pure given `env`; the plugin wraps it in
+ * a per-load cache so the filesystem is probed at most once per session.
+ */
+export function findAlisOnPath(env: Record<string, string | undefined> = process.env): boolean {
+  const path = env.PATH ?? ""
+  if (!path) return false
+  const sep = process.platform === "win32" ? ";" : ":"
+  const names = process.platform === "win32" ? ["alis.exe", "alis.cmd", "alis.bat", "alis"] : ["alis"]
+  for (const dir of path.split(sep)) {
+    if (!dir) continue
+    for (const name of names) {
+      try {
+        if (existsSync(join(dir, name))) return true
+      } catch {
+        // An unreadable PATH entry is just "not found".
+      }
+    }
+  }
+  return false
+}
+
+/**
+ * Resolve which primer variant this session gets (mirror of the Claude
+ * plugin's workspace-gated `load-primer.sh`):
+ *
+ *   full   — the working directory is inside an alis.build workspace (a
+ *            session doing DBD work);
+ *   digest — outside a workspace but the `alis` CLI is installed, so
+ *            wake-word skill routing keeps minimal context;
+ *   off    — neither: zero tokens for unrelated projects.
+ *
+ * ALIS_PRIMER=full|digest|off overrides the gate. `hasCli` is called lazily —
+ * only when the answer actually depends on CLI presence.
+ */
+export function resolvePrimerMode(
+  dir: string,
+  hasCli: () => boolean,
+  env: Record<string, string | undefined> = process.env,
+): PrimerMode {
+  const override = env.ALIS_PRIMER
+  if (override === "off" || override === "full" || override === "digest") return override
+  if (inAlisWorkspace(dir)) return "full"
+  return hasCli() ? "digest" : "off"
+}
+
+/**
+ * The text to inject for a primer mode. A missing digest falls back to the
+ * full primer (same graceful degradation as the shell hook); a missing primer
+ * emits nothing.
+ */
+export function loadPrimerForMode(
+  mode: PrimerMode,
+  load: (name: string) => string | null = loadInstruction,
+): string | null {
+  if (mode === "off") return null
+  if (mode === "digest") return load("dbd-digest.md") ?? load("dbd-primer.md")
+  return load("dbd-primer.md")
 }
 
 /** Hard cap on how long a per-prompt suggest call may delay the message. */
@@ -269,7 +344,12 @@ export const AlisBuildPlugin: Plugin = async ({ directory, worktree, $ }: any) =
   // plugins per project), so compute the injected blocks once.
   const cwd: string = directory ?? worktree ?? ""
   const serviceContext = cwd ? buildServiceContext(cwd) : null
-  const primer = loadPrimer()
+  // Workspace-gated primer (see the header comment): full inside an
+  // alis.build workspace, digest when only the CLI is present, nothing
+  // otherwise; ALIS_PRIMER overrides. The PATH probe is lazy and cached.
+  let cliProbe: boolean | undefined
+  const hasCli = (): boolean => (cliProbe ??= findAlisOnPath())
+  const primer = loadPrimerForMode(resolvePrimerMode(cwd || process.cwd(), hasCli))
 
   /**
    * Run `alis skills suggest` with the hook payload on stdin and return its
