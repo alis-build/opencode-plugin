@@ -65,6 +65,10 @@ chains steps into one call:
 `<pkg>` is the package id, e.g. `alis.os.cli.v1`; it may be omitted inside the service's
 directory.
 
+- **The working directory is the context.** Commands detect the organisation, product and
+  service from the folder they run in. After `alis service new`, change your working
+  directory to the `buildFolder` in its result before continuing — the result's `next` and
+  `agent` fields carry the exact follow-up commands.
 - **Parse stdout only under `--json`.** stdout carries exactly ONE final JSON object (or an
   error envelope — follow its `retry`/`agent` fields); progress streams as NDJSON on
   stderr. Never merge `2>&1` into a JSON parser. Full contract: `alis docs output`.

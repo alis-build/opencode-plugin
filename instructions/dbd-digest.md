@@ -17,8 +17,9 @@ self-documenting: `alis docs` and `alis <cmd> --help` are the source of truth. U
 `2>&1` into a JSON parser. Never poll with `sleep` loops: block with
 `alis operations wait <op> --json`. Never hand-edit dependency pins (`sed` on go.mod) or
 hand-roll package-manager environments — `alis packages` handles the private registries
-and credentials for you. When a conversation references an Ideate project (`ideas/<id>`),
-run `alis ideate context <id>` first.
+and credentials for you. The working directory is the context — after `alis service new`,
+cd into the `buildFolder` its result reports before continuing. When a conversation
+references an Ideate project (`ideas/<id>`), run `alis ideate context <id>` first.
 
 ## Skills are native
 
