@@ -24,7 +24,7 @@ command is absent, report that the handoff CLI release must be installed. Then u
 - `alis workstation handoff cancel <handoff-id> --json` only when cancellation is requested.
 
 If the user wants to move a Claude conversation, direct them to run
-`/alis-build:handoff` **inside that source Claude session** with the handoff-enabled
+`/alis:handoff` **inside that source Claude session** with the handoff-enabled
 Alis Claude plugin. It obtains the correct native session id and ends its turn so the
 coordinator can reach a safe stop. Do not choose the most recent transcript or guess an id.
 With several eligible destinations, ask which one; with none, report that enrollment

@@ -172,7 +172,7 @@ canonical primer and digest in the Alis Build Claude Code plugin
 currently v0.23.0. The local differences are harness adaptations
 only: the Skills sections name this plugin's `/discover` / `/capture` commands, the
 ambient per-prompt suggestions, and the `<alis-skill-hint>` block instead of Claude's
-`alis-build:*` skills. Sync both bodies on each claude-plugin primer release.
+`alis:*` skills. Sync both bodies on each claude-plugin primer release.
 
 ## License
 
@@ -188,7 +188,7 @@ Native hook payloads and permission mechanisms remain specific to this agent.
 The `/handoff` command handles "resume on my workstation", lists enrolled destinations, and explains
 how to inspect or cancel a known Claude handoff. **Automatic transfer currently supports
 Claude Code only; this plugin does not transfer OpenCode sessions.** Start a Claude transfer
-with `/alis-build:handoff` inside the source Claude session. For OpenCode work, the guide can
+with `/alis:handoff` inside the source Claude session. For OpenCode work, the guide can
 prepare a continuation summary; files and live processes are not transferred by that summary.
 Keep the laptop awake until the CLI reports `safe_to_close: true`.
 

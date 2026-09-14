@@ -414,7 +414,7 @@ export const AlisBuildPlugin: Plugin = async ({ directory, worktree, $ }: any) =
         }
         if (firstMessage) {
           const blocks: string[] = []
-          if (primer) blocks.push(`<alis-build-primer>\n${primer}\n</alis-build-primer>`)
+          if (primer) blocks.push(`<alis-primer>\n${primer}\n</alis-primer>`)
           if (serviceContext) blocks.push(`<alis-service-context>\n${serviceContext}\n</alis-service-context>`)
           const block = blocks.join("\n\n")
 
