@@ -60,24 +60,36 @@ session (`alis docs skills`).
 **Execute DBD through the `alis` CLI.** It is deterministic, auto-detects context, and
 chains steps into one call:
 
-- **Define** (and publish packages): `alis define <pkg> --json --install`
-- **Build** (optionally deploy): `alis build <pkg> --json --deploy -e <env>`
-- **Deploy**: `alis deploy <pkg> --json`
+- **Define** (and publish packages): `alis define <pkg> --json --install --async`
+- **Build** (optionally deploy): `alis build <pkg> --json --deploy -e <env> --async`
+- **Deploy**: `alis deploy <pkg> --version <version> -e <env> --json --async`
 - **Packages**: `alis packages install|upgrade|add <pkg> --json`
 
 `<pkg>` is the package id, e.g. `alis.os.cli.v1`; it may be omitted inside the service's
 directory.
 
-- **The working directory is the context.** Commands detect the organisation, product and
-  service from the folder they run in. After `alis service new`, change your working
-  directory to the `buildFolder` in its result before continuing — the result's `next` and
-  `agent` fields carry the exact follow-up commands.
+- **One standalone command per shell-tool call.** Use `alis --cwd /absolute/path <command>`
+  for another workspace; after `service new`, use its `buildFolder`. Shell directory
+  changes can be reset or lost when work moves to background. Preserve the exact package,
+  version and environment. Consult `alis --help` once if `--cwd` support is unknown;
+  an older CLI needs updating before using this option.
+- **Discover environments without values.** Use `alis environment list <org>.<product>
+  --json` for IDs, names, production classification and allowed branches. Request
+  `environment variables` only when the task actually needs variable values.
 - **Parse stdout only under `--json`.** stdout carries exactly ONE final JSON object (or an
   error envelope — follow its `retry`/`agent` fields); progress streams as NDJSON on
-  stderr. Never merge `2>&1` into a JSON parser. Full contract: `alis docs output`.
+  stderr. Read the whole result: no pipes, `head`, `tail`, `2>&1` or `2>/dev/null`.
+  They can hide failures and replace the CLI's exit code. Full contract: `alis docs output`.
+- **Operation JSON.** Start/wait/describe expose top-level `name`, `done`, `status`,
+  `version`, `notes` and `logsUri` when available (`schemaVersion: 1`). Start also
+  retains legacy `metadata`; do not use that parser for wait/describe. With older
+  CLIs, a missing `done` means false. Check errors before claiming success.
 - **Never poll with `sleep` loops.** Long operations print an operation name — block on it
   with `alis operations wait <op> --json` (`--async` results carry the exact command in
   `next`); `alis operations list --active --json` shows what is still running.
+  Keep the Alis operation name separate from the agent’s local background-task ID. Use the
+  background output handle the agent returns to inspect a wait; stopping that local task
+  never cancels the server operation. Resume the same operation after an auth repair.
 - **Never hand-edit dependency pins or package-manager environments.** No `sed` on
   `go.mod`/`package.json`, no hand-assembled `GOPROXY`/registry settings — that is the main
   reason `go mod tidy`/`pnpm install` fail here. `alis packages install` refreshes registry
@@ -89,6 +101,14 @@ directory.
   platform-side failure (e.g. a platform-injected credential error like `invalid_grant`) is
   not fixable in the repo — report it and offer `alis support send-message`/`send-session`
   instead of retrying.
+- **Logs and cancellation.** With a matching CLI/backend release, use `alis logs
+  build|deploy <op> --json`, `alis logs runtime <pkg> -e <env> --json`, and
+  `alis operations cancel <op> --json` (build only). Confirm `stopped: true` before
+  replacement work. `BACKEND_OUTDATED` requires the matching backend update.
+- **Classify failures.** Legacy private-import DNS failures need package migration;
+  they do not prove an agent sandbox issue. Use `alis doctor --json` and inspect
+  the actual error. If flags are unexpectedly missing, inspect `type -a alis` and
+  update the intended binary. No hand edits to stored credentials or registry config.
 - **Ideate context by reference.** When a conversation references an Alis Ideate project
   (`ideas/<id>`), run `alis ideate context <id>` first — one markdown document with
   everything the project holds; dig with `alis ideate specs|spec|stream|find`
@@ -97,9 +117,12 @@ directory.
   `alis authorise <org>.<product> --json` once and retry — a one-time repair, not a
   pre-push ritual. Exit code 4 anywhere means signed out → the user runs `alis login`.
   Never edit stored credential files or git auth config by hand.
-- **Production deploys are gated.** A production-targeting deploy exits with code 3 until
-  re-run with `--confirm-production`; that flag requires the user's explicit approval —
-  never add it yourself (`alis docs safety`).
+- **Production deploys are gated.** Prepare the exact built version or pushed commit,
+  target environments and any branch override. Present the CLI's pinned retry for
+  explicit user approval through the agent's native confirmation flow. After approval,
+  execute it with `--confirm-production` and verify its operation (`alis docs safety`).
+  Keep the approved version, targets and flags unchanged. Auto mode, `--approve` and
+  broad task intent are not production consent. Respect native policy denials.
 - **The CLI is self-documenting — consult it, don't memorise it.** `alis docs` is the
   complete agent operating manual and the source of truth for flags, output shapes and exit
   codes; the bullets above are the behavioural rules, not a restatement of it.

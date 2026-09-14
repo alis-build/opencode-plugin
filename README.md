@@ -48,11 +48,11 @@ builds, and deploys through the `alis` CLI — the opencode counterpart of the
 
 ## How this maps from the Claude Code plugin
 
-opencode and Claude Code expose the same capabilities through different mechanisms.
+Shared Alis workflows use agent-specific mechanisms. Native session transfer is currently Claude-only.
 
 | Claude Code plugin | opencode equivalent | Lives in |
 | --- | --- | --- |
-| `skills/discover` + `skills/capture` (description-triggered router skills) | `/discover` + `/capture` commands (`command/*.md` or `command` config key) | this repo / config |
+| `skills/discover` + `skills/capture` (description-triggered router skills) | `/discover` + `/capture` + `/handoff` commands (`command/*.md` or `command` config key) | this repo / config |
 | `hooks/suggest-skills.sh` (`UserPromptSubmit` hook → `alis skills suggest`) | `chat.message` plugin hook appending an `<alis-skill-hint>` block | `src/index.ts` |
 | `hooks/sync-skills.sh` (`SessionStart`, catalog only) | detached plugin-startup refresh using `--cache-only` | `src/index.ts` |
 | `context/dbd-primer.md` + `context/dbd-digest.md` via workspace-gated `load-primer.sh` (`SessionStart`) | gated `chat.message` plugin hook (primer and digest ship in the npm package) | `src/index.ts` |
@@ -85,7 +85,7 @@ opencode config — `~/.config/opencode/opencode.json` for a global install, or
 `.opencode/opencode.json` (or `opencode.json` at the repo root) for a project install.
 
 It wires up three things: the `@alis-build/opencode-plugin` npm plugin, the
-`/discover` + `/capture` commands, and the `"alis *": "ask"` bash permission that
+`/discover` + `/capture` + `/handoff` commands, and the `"alis *": "ask"` bash permission that
 routes `alis` commands through the plugin's strict approval hook. opencode installs
 the npm plugin automatically with Bun on next start.
 
@@ -94,9 +94,9 @@ separate primer install step, and primer updates arrive with plugin upgrades.
 
 ### 2. (Optional) Install the commands as files
 
-The `command` block in the config defines `/discover` and `/capture` inline, so this
+The `command` block in the config defines `/discover`, `/capture`, and `/handoff` inline, so this
 step is optional. If you prefer file-based commands, copy `command/discover.md` and
-`command/capture.md` into `~/.config/opencode/command/` (global) or `.opencode/command/`
+`command/capture.md` and `command/handoff.md` into `~/.config/opencode/command/` (global) or `.opencode/command/`
 (project) and drop the `command` block from your config. The file and inline versions
 must stay word-for-word identical — sync both when updating either.
 
@@ -169,12 +169,7 @@ opencode-plugin/
 `instructions/dbd-primer.md` and `instructions/dbd-digest.md` are synced from the
 canonical primer and digest in the Alis Build Claude Code plugin
 (`claude-plugin/plugins/alis-build/context/dbd-primer.md` and `dbd-digest.md`) —
-currently the v0.21.0 rewrite: a condensed Define section, the legacy-proto-import
-guidance cut to a three-line pointer at the `dbd-migrate-to-neuron-protos` skill, a
-shrunk Skills section (the discovery contract lives in the discovery surface itself),
-and an Executing DBD section carrying the stdout/stderr `--json` contract, the
-no-`sleep`-polling rule (`alis operations wait`), and the never-hand-edit-dependency-pins
-rule (`alis packages install|upgrade`). The local differences are harness adaptations
+currently v0.23.0. The local differences are harness adaptations
 only: the Skills sections name this plugin's `/discover` / `/capture` commands, the
 ambient per-prompt suggestions, and the `<alis-skill-hint>` block instead of Claude's
 `alis-build:*` skills. Sync both bodies on each claude-plugin primer release.
@@ -182,3 +177,20 @@ ambient per-prompt suggestions, and the `<alis-skill-hint>` block instead of Cla
 ## License
 
 MIT © Alis Build
+
+## Workstation handoff and Claude parity
+
+Shared CLI guidance is synced with [Claude plugin v0.23.0](https://github.com/alis-build/claude-plugin/commit/2cb12b52d2d74c642f58ccd5bee58cd12b9dacfe):
+standalone commands, environment discovery without variable values, asynchronous
+operations, complete JSON results, logs/cancellation and pinned production approval.
+Native hook payloads and permission mechanisms remain specific to this agent.
+
+The `/handoff` command handles "resume on my workstation", lists enrolled destinations, and explains
+how to inspect or cancel a known Claude handoff. **Automatic transfer currently supports
+Claude Code only; this plugin does not transfer OpenCode sessions.** Start a Claude transfer
+with `/alis-build:handoff` inside the source Claude session. For OpenCode work, the guide can
+prepare a continuation summary; files and live processes are not transferred by that summary.
+Keep the laptop awake until the CLI reports `safe_to_close: true`.
+
+Handoff requires the matching CLI and workstation runtime release, plus the Alis Claude
+plugin on both ends. Installing this plugin alone does not enable the transfer backend.
