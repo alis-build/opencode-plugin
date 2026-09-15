@@ -337,7 +337,49 @@ export function startCatalogSync(spawnProcess: CatalogSyncSpawner = spawn as unk
   }
 }
 
-export const AlisBuildPlugin: Plugin = async ({ directory, worktree, $ }: any) => {
+/** Lifecycle acknowledgements are independent of screen detection in herdr. */
+export function hasHandoffClaim(sessionID: string): boolean {
+  return /^[A-Za-z0-9_-]{1,128}$/.test(sessionID) &&
+    existsSync(join(homedir(), ".alis", "handoff-sessions", `opencode--${sessionID}.claim`))
+}
+
+export async function handoffLifecycle(sessionID: string | undefined, event: string, cwd: string, extra: Record<string, unknown> = {}): Promise<void> {
+  if (!sessionID || !/^[A-Za-z0-9_-]{1,128}$/.test(sessionID)) return
+  const response: any = await new Promise((resolve) => {
+    const child = spawn("alis", ["workstation", "handoff", "_hook"], { stdio: ["pipe", "pipe", "ignore"] })
+    let data = "", settled = false
+    const finish = (value: unknown) => { if (!settled) { settled = true; clearTimeout(timer); resolve(value) } }
+    const timer = setTimeout(() => { child.kill(); finish(null) }, 8000)
+    child.on("error", () => finish(null))
+    child.stdin.on("error", () => {})
+    child.stdout.on("data", (chunk) => { if (data.length < 65536) data += chunk })
+    child.on("close", (code) => { try { finish(code === 0 ? JSON.parse(data || "{}") : null) } catch { finish(null) } })
+    child.stdin.end(JSON.stringify({ agent: "opencode", integration: 2, session_id: sessionID, cwd, hook_event_name: event, ...extra }))
+  })
+  if (response?.continue === false || (!response && hasHandoffClaim(sessionID))) {
+    if (["PreToolUse", "UserPromptSubmit"].includes(event)) throw new Error(response?.stopReason ?? "Handoff owns this continuation. Check handoff status before continuing locally.")
+  }
+}
+
+/** Only vendor-reported idle sessions can form a safe export boundary. */
+export async function handoffInventory(client: any, sessionID: string): Promise<{background_tasks: string[], session_crons: string[], related_sessions: string[]}> {
+  const statuses = await client.session.status()
+  if (statuses.error || !statuses.data) throw new Error("session inventory unavailable")
+  const related: string[] = [], active: string[] = []
+  const visit = async (id: string) => {
+    const state = statuses.data[id]
+    if (state && state.type !== "idle") active.push(id)
+    const children = await client.session.children({ path: { id } })
+    if (children.error || !Array.isArray(children.data)) throw new Error("child inventory unavailable")
+    for (const child of children.data) {
+      if (!related.includes(child.id)) { related.push(child.id); await visit(child.id) }
+    }
+  }
+  await visit(sessionID)
+  return { background_tasks: active, session_crons: [], related_sessions: related }
+}
+
+export const AlisBuildPlugin: Plugin = async ({ directory, worktree, client, $ }: any) => {
   startCatalogSync()
 
   // The working directory is fixed for the life of the plugin (opencode loads
@@ -387,12 +429,39 @@ export const AlisBuildPlugin: Plugin = async ({ directory, worktree, $ }: any) =
   const autoAllowed = new Set<string>()
 
   return {
+    event: async ({ event }: any) => {
+      const props = event?.properties
+      const sid = props?.sessionID ?? props?.info?.id
+      if (!sid) return
+      if (event.type === "session.created") await handoffLifecycle(sid, "SessionStart", cwd)
+      if (event.type === "session.idle" || (event.type === "session.status" && props?.status?.type === "idle")) {
+        // A parent can have stopped while a child was still busy. Reconcile
+        // its boundary when that child becomes idle, without polling a model.
+        const visited = new Set<string>()
+        let current: string | undefined = sid
+        while (current && !visited.has(current) && visited.size < 128) {
+          visited.add(current)
+          let inventory: Record<string, unknown> = {}
+          try { inventory = await handoffInventory(client, current) } catch { /* unknown inventory blocks */ }
+          await handoffLifecycle(current, "Stop", cwd, inventory)
+          try {
+            const parent: any = await client.session.get({ path: { id: current } })
+            current = parent.error ? undefined : parent.data?.parentID
+          } catch { current = undefined }
+        }
+      }
+      if (event.type === "permission.asked") await handoffLifecycle(sid, "PermissionRequest", cwd)
+      if (event.type === "session.error") await handoffLifecycle(sid, "StopFailure", cwd)
+    },
+    "tool.execute.after": async (input: any) => { await handoffLifecycle(input?.sessionID, "PostToolUse", cwd) },
     "chat.message": async (input: any, output: any) => {
       const parts: any[] | undefined = output?.parts
       if (!Array.isArray(parts)) return
 
       const sessionID: string | undefined =
         input?.sessionID ?? output?.message?.sessionID ?? output?.message?.info?.sessionID
+
+      await handoffLifecycle(sessionID, "UserPromptSubmit", cwd)
 
       // Capture the user's raw prompt text BEFORE any injection mutates the
       // parts — the suggest payload must carry the prompt, not the primer.
@@ -476,6 +545,12 @@ export const AlisBuildPlugin: Plugin = async ({ directory, worktree, $ }: any) =
     },
 
     "tool.execute.before": async (input: any, output: any) => {
+      try { await handoffLifecycle(input?.sessionID, "PreToolUse", cwd) } catch (error) {
+        // Abort through the vendor API, then observe its idle event. Do not
+        // claim safety from merely throwing an error out of a tool hook.
+        if (client?.session?.abort) void client.session.abort({ path: { id: input.sessionID } }).catch(() => {})
+        throw error
+      }
       if (input?.tool !== "bash") return
       const cmd = String(output?.args?.command ?? "")
       // Same conservative gate as the classifier: only a clean, single command

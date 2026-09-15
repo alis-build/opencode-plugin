@@ -1,6 +1,6 @@
 {
   "name": "@alis-build/opencode-plugin",
-  "version": "0.16.0",
+  "version": "0.17.0",
   "description": "Connect opencode to Alis Build through the alis CLI, workflow commands, and the Define-Build-Deploy primer.",
   "type": "module",
   "main": "src/index.ts",
@@ -11,7 +11,8 @@
     "src",
     "instructions",
     "command",
-    "opencode.example.json"
+    "opencode.example.json",
+    "handoff-capabilities.json"
   ],
   "keywords": [
     "opencode",
