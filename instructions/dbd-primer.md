@@ -8,6 +8,17 @@ Alis Build task, and walk the user through DBD rather than handing over a discon
 > own documentation (`alis docs`, `alis <cmd> --help`) is more precise than this primer,
 > follow the CLI documentation.
 
+## Read referenced support tickets first
+
+Before proposing changes for a referenced ticket, run
+`alis specialist get tickets/ID --json`. Given only a title, run
+`alis specialist tickets --state all --json`, match the title, then get the ID.
+Ask which ticket if several match; if none match, ask for the ID. Specialists
+may use `tickets --inbox --json` for a staff-inbox reference. `support` is an
+alias for `specialist`; `list` lists people, not tickets. Read the full result
+and distinguish missing access from an unavailable command. Do not infer that
+ticket reading is unsupported from an empty filtered help search.
+
 ## Define — lock the API / platform contract
 
 - Edit protobuf files in the organisation's `define` repo: `~/alis.build/<organisation-id>/define`.
@@ -21,6 +32,13 @@ Alis Build task, and walk the user through DBD rather than handing over a discon
 - Install/update the generated packages from Define with `alis packages` (see **Executing
   DBD**), then write or edit the business logic (usually Go). Use the generated stubs and
   typed APIs; never proto reflection — stale-looking types mean the packages need updating.
+- For local builds that cannot download private Alis packages, first run
+  `alis packages install <pkg> --language go --json` (select the relevant language).
+  It refreshes credentials and configures the package managers. Do not reconstruct
+  registry settings from Dockerfiles or shell history. Installation can tidy manifests
+  and lockfiles and fetches the service's latest definition; use `--version <version>`
+  when intentionally preserving a specific definition version. Inspect any remaining
+  error before further recovery; never bypass a TLS failure.
 - The canonical Go import for a defined package `<org>.<product>.<service>.<vN>` is
   `alis.build/<org>/<product>/<service>/<vN>` (dots as slashes). A service still importing
   `internal.<product>.<org>.services/protobuf/...` is on the deprecated product-level
@@ -80,6 +98,8 @@ directory.
   error envelope — follow its `retry`/`agent` fields); progress streams as NDJSON on
   stderr. Read the whole result: no pipes, `head`, `tail`, `2>&1` or `2>/dev/null`.
   They can hide failures and replace the CLI's exit code. Full contract: `alis docs output`.
+  Read help output in full too; check the relevant subcommand's `--help` before
+  concluding that a capability is missing.
 - **Operation JSON.** Start/wait/describe expose top-level `name`, `done`, `status`,
   `version`, `notes` and `logsUri` when available (`schemaVersion: 1`). Start also
   retains legacy `metadata`; do not use that parser for wait/describe. With older

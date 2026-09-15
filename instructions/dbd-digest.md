@@ -1,5 +1,13 @@
 # Alis Build — DBD refresher
 
+Read referenced support tickets before proposing changes:
+`alis specialist get tickets/ID --json`. Given only a title, use
+`alis specialist tickets --state all --json`, match it, then get the ID. Ask
+which ticket if several match, or ask for the ID if none match. `support` is an
+alias; `list` lists people. Specialists may use `tickets --inbox --json` for a
+staff-inbox reference. Read full results and distinguish access errors from
+missing commands; an empty filtered help search proves neither.
+
 Define, Build, Deploy. Protobuf contracts live in the org's define repo
 (`~/alis.build/<org>/define`); Define pins the contract to a pushed commit and generates
 language packages plus platform artifacts (Spanner protobundles, Pub/Sub topics). Go
@@ -21,6 +29,13 @@ and credentials for you. The working directory is the context — after `alis se
 use `alis --cwd /absolute/buildFolder ...` before continuing. When a conversation
 references an Ideate project (`ideas/<id>`), run `alis ideate context <id>` first.
 
+If a local build cannot download private Alis packages, first run
+`alis packages install <pkg> --language go --json` (select the relevant language).
+Do not reconstruct registry settings from Dockerfiles or shell history. Install
+can tidy manifests and lockfiles and fetches the service's latest definition;
+use `--version <version>` when intentionally preserving a specific definition
+version. Inspect any remaining error before further recovery; never bypass TLS.
+
 ## Skills are native
 
 The `/discover` command and the ambient per-prompt suggestions route platform-shaped work
@@ -37,6 +52,8 @@ then execute it with `--confirm-production` and verify its operation. Keep appro
 arguments unchanged. Session modes, `--approve` and broad task intent grant no consent.
 
 Run one standalone Alis command per shell-tool call: no pipes, output trimming or redirects.
+Read help in full too; check the relevant subcommand's `--help` before concluding
+that a capability is missing.
 Use `environment list <org>.<product> --json` for target IDs and production flags,
 without variable values. Check CLI help when using a newly introduced command.
 Start long DBD work with `--async`; retain `name` and run `next`. Start/wait/describe

@@ -164,12 +164,24 @@ opencode-plugin/
     └── capture.md
 ```
 
+## Ticket reading and package setup
+
+Read referenced support tickets before proposing changes: use
+`alis specialist get tickets/ID --json`, or find the title with
+`alis specialist tickets --state all --json`. Use `alis packages install`
+for private package setup during Build. Read command results and help in full.
+
+If this guidance is absent after updating, confirm the Alis plugin is enabled
+and restart the agent. The CLI alone does not activate the agent plugin.
+For immediate guidance, read `alis docs specialist` and
+`alis packages install --help`.
+
 ## Primer sync
 
 `instructions/dbd-primer.md` and `instructions/dbd-digest.md` are synced from the
 canonical primer and digest in the Alis Build Claude Code plugin
 (`claude-plugin/plugins/alis-build/context/dbd-primer.md` and `dbd-digest.md`) —
-currently v0.23.0. The local differences are harness adaptations
+baseline v0.23.0, with ticket and package guidance from v0.25.1. The local differences are harness adaptations
 only: the Skills sections name this plugin's `/discover` / `/capture` commands, the
 ambient per-prompt suggestions, and the `<alis-skill-hint>` block instead of Claude's
 `alis:*` skills. Sync both bodies on each claude-plugin primer release.
