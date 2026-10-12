@@ -119,8 +119,9 @@ directory.
   first: `alis operations describe|wait <op>`, `alis doctor --json`,
   `alis context view --json`, or `alis ask "<question>"` for grounded answers. A
   platform-side failure (e.g. a platform-injected credential error like `invalid_grant`) is
-  not fixable in the repo — report it and offer `alis support send-message`/`send-session`
-  instead of retrying.
+  not fixable in the repo — report it and offer the `share` command its error envelope
+  carries (`alis specialist send-message --attach-session …`) instead of retrying: the
+  session is what the platform team needs.
 - **Logs and cancellation.** With a matching CLI/backend release, use `alis logs
   build|deploy <op> --json`, `alis logs runtime <pkg> -e <env> --json`, and
   `alis operations cancel <op> --json` (build only). Confirm `stopped: true` before
