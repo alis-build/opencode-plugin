@@ -8,20 +8,20 @@ Alis Build task, and walk the user through DBD rather than handing over a discon
 > own documentation (`alis docs`, `alis <cmd> --help`) is more precise than this primer,
 > follow the CLI documentation.
 
-## Read referenced support tickets first
+## Read referenced conversations first
 
-Before proposing changes for a referenced ticket, run
+Before proposing changes for a referenced conversation, run
 `alis specialist get tickets/ID --json`. Given only a title, run
 `alis specialist tickets --state all --json`, match the title, then get the ID.
-Ask which ticket if several match; if none match, ask for the ID. Specialists
+Ask which conversation if several match; if none match, ask for the ID. Specialists
 may use `tickets --inbox --json` for a staff-inbox reference. `support` is an
-alias for `specialist`; `list` lists people, not tickets. Read the full result
+alias for `specialist`; `list` lists people, not conversations. Read the full result
 and distinguish missing access from an unavailable command. Do not infer that
-ticket reading is unsupported from an empty filtered help search.
+conversation reading is unsupported from an empty filtered help search.
 
 ## Define — lock the API / platform contract
 
-- Edit protobuf files in the organisation's `define` repo: `~/alis.build/<organisation-id>/define`.
+- Edit protobuf files in the build environment's `define` repo: `~/alis.build/<organisation-id>/define`.
 - Commit and push, then Define — the contract pins to that exact pushed commit and generates
   consumable language packages, and may sync platform artifacts such as Spanner protobundles
   or Pub/Sub topics. This is the source-of-truth step.
@@ -49,13 +49,13 @@ ticket reading is unsupported from an empty filtered help search.
   pushed — are invisible to the build server, so a rebuild will reproduce the exact error you
   just fixed. Commit and push first (source, Dockerfile, go.mod alike); when a rebuild fails
   identically, compare the commit hash in the build output against your fix before
-  re-diagnosing. Docker build paths are relative to the neuron folder (a top-level
+  re-diagnosing. Docker build paths are relative to the service folder (a top-level
   Dockerfile uses `.`, not `demo/v1`).
 
 ## Deploy — provision and update the runtime
 
-- Review the neuron's Terraform under its `infra/` folder; deploy the built version to a
-  real environment — the environment comes from the product context, not a guess.
+- Review the service's Terraform under its `infra/` folder; deploy the built version to a
+  deployment environment — the deployment environment comes from the product context, not a guess.
 - Validate end-to-end via the generated playground, usually `<neuron>/.playground/main_test.go`.
   Note `.playground` is hidden AND git-ignored: `rg` and `git grep` skip it by default, so
   repo-wide sweeps need `rg --hidden --no-ignore` to include it.
@@ -83,15 +83,15 @@ chains steps into one call:
 - **Deploy**: `alis deploy <pkg> --version <version> -e <env> --json --async`
 - **Packages**: `alis packages install|upgrade|add <pkg> --json`
 
-`<pkg>` is the package id, e.g. `alis.os.cli.v1`; it may be omitted inside the service's
+`<pkg>` is the package ID, e.g. `alis.os.cli.v1`; it may be omitted inside the service's
 directory.
 
 - **One standalone command per shell-tool call.** Use `alis --cwd /absolute/path <command>`
   for another workspace; after `service new`, use its `buildFolder`. Shell directory
   changes can be reset or lost when work moves to background. Preserve the exact package,
-  version and environment. Consult `alis --help` once if `--cwd` support is unknown;
+  version and deployment environment. Consult `alis --help` once if `--cwd` support is unknown;
   an older CLI needs updating before using this option.
-- **Discover environments without values.** Use `alis environment list <org>.<product>
+- **Discover deployment environments without values.** Use `alis environment list <org>.<product>
   --json` for IDs, names, production classification and allowed branches. Request
   `environment variables` only when the task actually needs variable values.
 - **Parse stdout only under `--json`.** stdout carries exactly ONE final JSON object (or an
@@ -132,14 +132,14 @@ directory.
   update the intended binary. No hand edits to stored credentials or registry config.
 - **Ideate context by reference.** When a conversation references an Alis Ideate project
   (`ideas/<id>`), run `alis ideate context <id>` first — one markdown document with
-  everything the project holds; dig with `alis ideate specs|spec|stream|find`
+  everything the project holds; dig with `alis ideate artifacts read`, `alis ideate contribution` and `alis ideate find`
   (`alis docs ideate`).
 - **Auth recovery.** A git auth failure against an Alis remote: run
   `alis authorise <org>.<product> --json` once and retry — a one-time repair, not a
   pre-push ritual. Exit code 4 anywhere means signed out → the user runs `alis login`.
   Never edit stored credential files or git auth config by hand.
 - **Production deploys are gated.** Prepare the exact built version or pushed commit,
-  target environments and any branch override. Present the CLI's pinned retry for
+  target deployment environments and any branch override. Present the CLI's pinned retry for
   explicit user approval through the agent's native confirmation flow. After approval,
   execute it with `--confirm-production` and verify its operation (`alis docs safety`).
   Keep the approved version, targets and flags unchanged. Auto mode, `--approve` and
@@ -147,3 +147,17 @@ directory.
 - **The CLI is self-documenting — consult it, don't memorise it.** `alis docs` is the
   complete agent operating manual and the source of truth for flags, output shapes and exit
   codes; the bullets above are the behavioural rules, not a restatement of it.
+
+## Ideate artifacts and service releases
+
+Use `alis ideate context <project>` to find a project's artifacts, then
+`alis ideate artifacts read <artifact> --project <project>` to read one.
+The reader supports `--path`, `--start-line`, `--end-line` and `--version`.
+`alis ideate artifacts list` lists metadata; `alis ideate artifacts get` reads
+settings. Use `alis interviews` for interviews.
+
+Use `alis deploy` to deploy to a deployment environment. `alis service release`
+offers a service to other build environments. The hidden `alis release` still
+means deploy; its production checks are unchanged. `ideate output-artifact`,
+`ideate output-artifacts`, `ideate sessions` and `ideate session` remain callable
+for compatibility. Prefer the current names above; check `--help` on older CLIs.

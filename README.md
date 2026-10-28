@@ -1,8 +1,11 @@
 # Alis Build opencode Plugin
 
+This prepared update aligns terminology and artifact reading with the coordinated
+CLI copy pass (proposed CLI 1.174.2). Publish the CLI and plugins together.
+
 **Connect [opencode](https://opencode.ai) to Alis Build.**
 
-Use this plugin to let opencode work with Alis Build organisations, products, neurons,
+Use this plugin to let opencode work with build environments, products, services,
 builds, and deploys through the `alis` CLI — the opencode counterpart of the
 [Alis Build Claude Code plugin](https://github.com/alis-build/claude-plugin).
 
@@ -19,7 +22,7 @@ builds, and deploys through the `alis` CLI — the opencode counterpart of the
   unrelated projects. `ALIS_PRIMER=full|digest|off` overrides the gate
 - Workspace service context: inside `~/alis.build/<org>/{build,define}/…` the plugin
   injects the package id and a pointer to the definitions ⇄ implementation counterpart
-- `/discover` and `/capture` workflow commands: `/discover` probes the local catalog
+- `/discover` and `/capture` workflow commands: `/discover` probes the local catalogue
   first (`alis skills suggest --json`, ~40ms, no network), loads a registry skill only
   on a distinctive match, and stays silent otherwise (registry `search` is reserved for
   explicit "find me a skill" asks); `/capture` saves work just completed in the session
@@ -33,7 +36,7 @@ builds, and deploys through the `alis` CLI — the opencode counterpart of the
   silent), and every failure path is silent. Inside an alis.build workspace every prompt
   reaches the CLI; elsewhere a cheap prefilter forwards only prompts that could carry a
   wake phrase (`ALIS_SUGGEST_ALWAYS=1` disables the prefilter)
-- Catalog metadata refreshed quietly at plugin startup with `alis skills sync --cache-only`;
+- Catalogue metadata refreshed quietly at plugin startup with `alis skills sync --cache-only`;
   the plugin never installs or prunes native user skills
 - Strict `alis` CLI auto-approval via the plugin's `permission.ask` hook: clean, single
   `alis …` commands run without a prompt; chained/redirected commands
@@ -54,7 +57,7 @@ Shared Alis workflows use agent-specific mechanisms. Native session transfer is 
 | --- | --- | --- |
 | `skills/discover` + `skills/capture` (description-triggered router skills) | `/discover` + `/capture` + `/handoff` commands (`command/*.md` or `command` config key) | this repo / config |
 | `hooks/suggest-skills.sh` (`UserPromptSubmit` hook → `alis skills suggest`) | `chat.message` plugin hook appending an `<alis-skill-hint>` block | `src/index.ts` |
-| `hooks/sync-skills.sh` (`SessionStart`, catalog only) | detached plugin-startup refresh using `--cache-only` | `src/index.ts` |
+| `hooks/sync-skills.sh` (`SessionStart`, catalogue only) | detached plugin-startup refresh using `--cache-only` | `src/index.ts` |
 | `context/dbd-primer.md` + `context/dbd-digest.md` via workspace-gated `load-primer.sh` (`SessionStart`) | gated `chat.message` plugin hook (primer and digest ship in the npm package) | `src/index.ts` |
 | `allow-alis-cli.sh` (`PreToolUse` Bash hook) | `permission.ask` plugin hook (+ `"alis *": "ask"` config so it fires) | `src/index.ts` |
 | `~/.alis/agent-approval.json` bridge | `tool.execute.before` (bash) + `shell.env` plugin hooks | `src/index.ts` |
@@ -74,7 +77,7 @@ You need:
 
 - opencode installed
 - The `alis` CLI installed, on your `PATH`, and signed in (`alis login`)
-- An Alis Build account with access to the organisations and products you want to use
+- An Alis Build account with access to the build environments and products you want to use
 
 ## Install
 
@@ -123,11 +126,11 @@ capture this as a skill
 ```
 
 ```text
-Use Alis Build to list the organisations I can access.
+Use Alis Build to list the build environments I can access.
 ```
 
 ```text
-Show recent builds for product os in organisation alis.
+Show recent builds for product os in build environment alis.
 ```
 
 `/discover` runs the skill-discovery router explicitly; the per-prompt suggestions route
@@ -164,9 +167,9 @@ opencode-plugin/
     └── capture.md
 ```
 
-## Ticket reading and package setup
+## Conversation reading and package setup
 
-Read referenced support tickets before proposing changes: use
+Read referenced conversations before proposing changes: use
 `alis specialist get tickets/ID --json`, or find the title with
 `alis specialist tickets --state all --json`. Use `alis packages install`
 for private package setup during Build. Read command results and help in full.
@@ -181,7 +184,7 @@ For immediate guidance, read `alis docs specialist` and
 `instructions/dbd-primer.md` and `instructions/dbd-digest.md` are synced from the
 canonical primer and digest in the Alis Build Claude Code plugin
 (`claude-plugin/plugins/alis-build/context/dbd-primer.md` and `dbd-digest.md`) —
-baseline v0.23.0, with ticket and package guidance from v0.25.1. The local differences are harness adaptations
+baseline v0.23.0, with conversation and package guidance from v0.25.1. The local differences are coding agent adaptations
 only: the Skills sections name this plugin's `/discover` / `/capture` commands, the
 ambient per-prompt suggestions, and the `<alis-skill-hint>` block instead of Claude's
 `alis:*` skills. Sync both bodies on each claude-plugin primer release.

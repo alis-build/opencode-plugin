@@ -129,7 +129,7 @@ export function buildServiceContext(dir: string): string | null {
   const lines: string[] = []
   if (side === "build") {
     lines.push("This opencode session is inside an Alis Build service implementation (build) directory.")
-    if (pkg) lines.push(`  Package id:  ${pkg}`)
+    if (pkg) lines.push(`  Package ID:  ${pkg}`)
     if (existsSync(defineDir)) {
       lines.push('  The protobuf definitions (the API contract — the DBD "Define" step) are available here:')
       lines.push(`    ${defineDir}${protoLine(defineDir)}`)
@@ -138,7 +138,7 @@ export function buildServiceContext(dir: string): string | null {
     }
   } else {
     lines.push("This opencode session is inside an Alis Build definitions (define) directory — the protobuf API contract.")
-    if (pkg) lines.push(`  Package id:  ${pkg}`)
+    if (pkg) lines.push(`  Package ID:  ${pkg}`)
     const protos = protoLine(dir)
     if (protos) lines.push(protos.slice(1)) // drop the leading newline
     if (existsSync(buildDir)) {

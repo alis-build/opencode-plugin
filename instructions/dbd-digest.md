@@ -1,19 +1,19 @@
 # Alis Build — DBD refresher
 
-Read referenced support tickets before proposing changes:
+Read referenced conversations before proposing changes:
 `alis specialist get tickets/ID --json`. Given only a title, use
 `alis specialist tickets --state all --json`, match it, then get the ID. Ask
-which ticket if several match, or ask for the ID if none match. `support` is an
+which conversation if several match, or ask for the ID if none match. `support` is an
 alias; `list` lists people. Specialists may use `tickets --inbox --json` for a
 staff-inbox reference. Read full results and distinguish access errors from
 missing commands; an empty filtered help search proves neither.
 
-Define, Build, Deploy. Protobuf contracts live in the org's define repo
+Define, Build, Deploy. Protobuf contracts live in the build environment's define repo
 (`~/alis.build/<org>/define`); Define pins the contract to a pushed commit and generates
 language packages plus platform artifacts (Spanner protobundles, Pub/Sub topics). Go
-services (neurons) live in product build repos (`~/alis.build/<org>/build/<product>`);
+services live in product build repos (`~/alis.build/<org>/build/<product>`);
 Build runs from the latest *pushed* commit — commit and push before building. Deploy
-provisions the runtime (Cloud Run plus supporting resources) from the neuron's Terraform
+provisions the runtime (Cloud Run plus supporting resources) from the service's Terraform
 under `infra/`; validate via the generated playground.
 
 ## Execute through the `alis` CLI
@@ -47,7 +47,7 @@ workspace. A loaded skill owns execution. After solving something new by hand, t
 can say "capture this as a skill" and the `/capture` command saves it for their team.
 
 Production changes require explicit approval of the exact version or pushed commit,
-target environments and branch override. Present the CLI's pinned retry for approval,
+target deployment environments and branch override. Present the CLI's pinned retry for approval,
 then execute it with `--confirm-production` and verify its operation. Keep approved
 arguments unchanged. Session modes, `--approve` and broad task intent grant no consent.
 
@@ -64,3 +64,17 @@ wait never cancels server work. Use logs and build cancellation with a matching
 CLI/backend release. Diagnose auth, package DNS and platform failures separately.
 Direct DBD commands on a known target need no skill discovery. After a plugin update,
 restart the agent; `alis doctor --json` reports cache and recent hook observations.
+
+## Ideate artifacts and service releases
+
+Use `alis ideate context <project>` to find a project's artifacts, then
+`alis ideate artifacts read <artifact> --project <project>` to read one.
+The reader supports `--path`, `--start-line`, `--end-line` and `--version`.
+`alis ideate artifacts list` lists metadata; `alis ideate artifacts get` reads
+settings. Use `alis interviews` for interviews.
+
+Use `alis deploy` to deploy to a deployment environment. `alis service release`
+offers a service to other build environments. The hidden `alis release` still
+means deploy; its production checks are unchanged. `ideate output-artifact`,
+`ideate output-artifacts`, `ideate sessions` and `ideate session` remain callable
+for compatibility. Prefer the current names above; check `--help` on older CLIs.
