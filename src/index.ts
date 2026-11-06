@@ -1,9 +1,10 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import { spawn } from "node:child_process"
-import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs"
-import { homedir } from "node:os"
+import { existsSync, readdirSync, readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
+import { createNativeHooks, UPGRADE_NOTICE } from "./native-hooks.ts"
+export { hasHandoffClaim } from "./native-hooks.ts"
 
 /**
  * Alis Build plugin for opencode.
@@ -11,9 +12,8 @@ import { fileURLToPath } from "node:url"
  * This file ships the behaviour that needs code — the opencode mirror of the
  * Claude Code plugin's hooks:
  *
- *   1. Refreshing the local skills catalog at plugin startup with the explicit
- *      legacy-safe `alis skills sync --cache-only` contract. This never installs
- *      or prunes native per-skill entries.
+ *   1. Refreshing the local skills catalog through the Go startup hook, with
+ *      `alis skills sync --cache-only` as a compatibility fallback on older CLIs.
  *   2. Injecting the DBD primer and a cwd-dependent "service context" block into
  *      the first message of each session (mirror of the Claude plugin's
  *      `load-primer.sh` + `inject-service-context.sh` SessionStart hooks). The
@@ -25,18 +25,12 @@ import { fileURLToPath } from "node:url"
  *      projects. ALIS_PRIMER=full|digest|off overrides the gate, and the
  *      CLI-presence probe (a PATH scan) runs lazily and is cached for the
  *      life of the plugin.
- *   3. Auto-approving clean, single `alis …` shell commands via `permission.ask`
- *      (mirror of `allow-alis-cli.sh`), with the same double-key carve-outs:
- *      `--confirm-production`, `--approve`, and `blocks|block uninstall --yes`
- *      always stay on a human prompt.
- *   4. Recording the pending `alis` command at `~/.alis/agent-approval.json` so
- *      the alis CLI's approval gate can treat a plugin-auto-allowed command as a
- *      standing grant (permission_mode "auto-allow"; anything the human clicked
- *      through records "default").
- *   5. Exporting `ALIS_OPENCODE=1` into every shell command via `shell.env` — the
- *      env marker the alis CLI requires before trusting the approval record —
- *      plus `ALIS_SESSION_ID` when the hook input carries a session id.
- *   6. Per-prompt ambient skill discovery via `chat.message` (mirror of the
+ *   3. Passing permission, secret warnings, catalog sync and handoff events to
+ *      the Go hook handlers in the alis binary. TypeScript only adapts the
+ *      OpenCode callbacks and vendor session inventory. No Python is required.
+ *   4. Exporting ALIS_OPENCODE and ALIS_SESSION_ID for session identity. There
+ *      is no shared approval file or standing grant written by this plugin.
+ *   5. Per-prompt ambient skill discovery via `chat.message` (mirror of the
  *      Claude plugin's `suggest-skills.sh` UserPromptSubmit hook): each user
  *      message is piped as a JSON payload to
  *      `alis skills suggest --hook --harness opencode`, and any plain-text
@@ -149,70 +143,6 @@ export function buildServiceContext(dir: string): string | null {
     }
   }
   return lines.join("\n")
-}
-
-/**
- * Classify a shell command for the alis auto-approval flow (mirror of
- * `allow-alis-cli.sh`):
- *
- *   "allow" — a clean, single `alis <subcommand> …` invocation.
- *   "defer" — anything else: not alis, chained/redirected (which would let
- *             `alis define && rm -rf /` ride on the allow), an
- *             explicit-approval flag (`--confirm-production`, `--approve`),
- *             `blocks|block uninstall --yes` (destructive, prompt-skipping),
- *             or a subcommand outside ALIS_ALLOWED_SUBCMDS when that
- *             space-separated allowlist is set. Deferred commands stay on
- *             opencode's normal permission prompt — deliberate double-keying
- *             for the carve-outs.
- */
-export function classifyAlisCommand(cmd: string): "allow" | "defer" {
-  if (!cmd) return "defer"
-  // Reject anything that splits into multiple shell segments or redirects. A
-  // legitimately-quoted metacharacter just means the user gets a normal prompt
-  // this once, which is safe degradation.
-  if (/[|&;<>`\n]|\$\(/.test(cmd)) return "defer"
-
-  const tokens = cmd.trim().split(/\s+/)
-  if (tokens[0] !== "alis") return "defer"
-  const sub = tokens[1] ?? ""
-
-  if (cmd.includes("--confirm-production") || cmd.includes("--approve")) return "defer"
-  if ((sub === "blocks" || sub === "block") && tokens.includes("uninstall") && tokens.includes("--yes")) return "defer"
-
-  const allowlist = (process.env.ALIS_ALLOWED_SUBCMDS ?? "").trim()
-  if (allowlist && !allowlist.split(/\s+/).includes(sub)) return "defer"
-
-  return "allow"
-}
-
-/**
- * Record the pending `alis` command for the alis CLI's approval gate. Mirrors
- * the Claude hook's atomic write: temp file in ~/.alis, chmod 600, rename.
- * Best-effort — any failure is swallowed so it never affects the tool call.
- */
-function writeAgentApproval(command: string, sessionID: string | undefined, autoAllowed: boolean): void {
-  const dir = join(homedir(), ".alis")
-  const tmp = join(dir, `.agent-approval.${process.pid}.${Date.now()}`)
-  try {
-    mkdirSync(dir, { recursive: true })
-    const record = {
-      version: 1,
-      harness: "opencode",
-      permission_mode: autoAllowed ? "auto-allow" : "default",
-      session_id: sessionID ?? "",
-      command,
-      written_at: new Date().toISOString(),
-    }
-    writeFileSync(tmp, JSON.stringify(record), { mode: 0o600 })
-    chmodSync(tmp, 0o600)
-    renameSync(tmp, join(dir, "agent-approval.json"))
-  } catch {
-    try {
-      rmSync(tmp, { force: true })
-    } catch {
-      // best-effort cleanup only
-    }
-  }
 }
 
 /** Load a markdown file shipped inside this package, or null when unreadable/empty. */
@@ -337,30 +267,6 @@ export function startCatalogSync(spawnProcess: CatalogSyncSpawner = spawn as unk
   }
 }
 
-/** Lifecycle acknowledgements are independent of screen detection in herdr. */
-export function hasHandoffClaim(sessionID: string): boolean {
-  return /^[A-Za-z0-9_-]{1,128}$/.test(sessionID) &&
-    existsSync(join(homedir(), ".alis", "handoff-sessions", `opencode--${sessionID}.claim`))
-}
-
-export async function handoffLifecycle(sessionID: string | undefined, event: string, cwd: string, extra: Record<string, unknown> = {}): Promise<void> {
-  if (!sessionID || !/^[A-Za-z0-9_-]{1,128}$/.test(sessionID)) return
-  const response: any = await new Promise((resolve) => {
-    const child = spawn("alis", ["workstation", "handoff", "_hook"], { stdio: ["pipe", "pipe", "ignore"] })
-    let data = "", settled = false
-    const finish = (value: unknown) => { if (!settled) { settled = true; clearTimeout(timer); resolve(value) } }
-    const timer = setTimeout(() => { child.kill(); finish(null) }, 8000)
-    child.on("error", () => finish(null))
-    child.stdin.on("error", () => {})
-    child.stdout.on("data", (chunk) => { if (data.length < 65536) data += chunk })
-    child.on("close", (code) => { try { finish(code === 0 ? JSON.parse(data || "{}") : null) } catch { finish(null) } })
-    child.stdin.end(JSON.stringify({ agent: "opencode", integration: 2, session_id: sessionID, cwd, hook_event_name: event, ...extra }))
-  })
-  if (response?.continue === false || (!response && hasHandoffClaim(sessionID))) {
-    if (["PreToolUse", "UserPromptSubmit"].includes(event)) throw new Error(response?.stopReason ?? "Handoff owns this continuation. Check handoff status before continuing locally.")
-  }
-}
-
 /** Only vendor-reported idle sessions can form a safe export boundary. */
 export async function handoffInventory(client: any, sessionID: string): Promise<{background_tasks: string[], session_crons: string[], related_sessions: string[]}> {
   const statuses = await client.session.status()
@@ -380,11 +286,15 @@ export async function handoffInventory(client: any, sessionID: string): Promise<
 }
 
 export const AlisBuildPlugin: Plugin = async ({ directory, worktree, client, $ }: any) => {
-  startCatalogSync()
-
   // The working directory is fixed for the life of the plugin (opencode loads
   // plugins per project), so compute the injected blocks once.
   const cwd: string = directory ?? worktree ?? ""
+  const native = createNativeHooks(cwd)
+  const handoffLifecycle = native.handoff
+  void native.supported.then((supported) => {
+    if (supported) void native.run("sync", { source: "startup" }, 25000)
+    else startCatalogSync()
+  })
   const serviceContext = cwd ? buildServiceContext(cwd) : null
   // Workspace-gated primer (see the header comment): full inside an
   // alis.build workspace, digest when only the CLI is present, nothing
@@ -423,17 +333,14 @@ export const AlisBuildPlugin: Plugin = async ({ directory, worktree, client, $ }
   const injectedSessions = new Set<string>()
   let injectedWithoutSessionId = false
 
-  // Permission ids / call ids this plugin auto-allowed via permission.ask. Used
-  // to distinguish "auto-allow" (standing grant) from "default" (the human saw a
-  // prompt, or the allow came from user config) in the approval record.
-  const autoAllowed = new Set<string>()
+  let upgradeNoticeShown = false
 
   return {
     event: async ({ event }: any) => {
       const props = event?.properties
       const sid = props?.sessionID ?? props?.info?.id
       if (!sid) return
-      if (event.type === "session.created") await handoffLifecycle(sid, "SessionStart", cwd)
+      if (event.type === "session.created") await handoffLifecycle(sid, "SessionStart")
       if (event.type === "session.idle" || (event.type === "session.status" && props?.status?.type === "idle")) {
         // A parent can have stopped while a child was still busy. Reconcile
         // its boundary when that child becomes idle, without polling a model.
@@ -443,17 +350,26 @@ export const AlisBuildPlugin: Plugin = async ({ directory, worktree, client, $ }
           visited.add(current)
           let inventory: Record<string, unknown> = {}
           try { inventory = await handoffInventory(client, current) } catch { /* unknown inventory blocks */ }
-          await handoffLifecycle(current, "Stop", cwd, inventory)
+          await handoffLifecycle(current, "Stop", inventory)
           try {
             const parent: any = await client.session.get({ path: { id: current } })
             current = parent.error ? undefined : parent.data?.parentID
           } catch { current = undefined }
         }
       }
-      if (event.type === "permission.asked") await handoffLifecycle(sid, "PermissionRequest", cwd)
-      if (event.type === "session.error") await handoffLifecycle(sid, "StopFailure", cwd)
+      if (event.type === "permission.asked") await handoffLifecycle(sid, "PermissionRequest")
+      if (event.type === "session.error") await handoffLifecycle(sid, "StopFailure")
     },
-    "tool.execute.after": async (input: any) => { await handoffLifecycle(input?.sessionID, "PostToolUse", cwd) },
+    "tool.execute.after": async (input: any, output: any) => {
+      await handoffLifecycle(input?.sessionID, "PostToolUse")
+      const warning = await native.run("secrets", {
+        session_id: input?.sessionID, tool_name: input?.tool,
+        tool_input: input?.args, tool_response: output?.output,
+      })
+      if (typeof warning?.additionalContext === "string" && typeof output?.output === "string") {
+        output.output += "\n\n" + warning.additionalContext
+      }
+    },
     "chat.message": async (input: any, output: any) => {
       const parts: any[] | undefined = output?.parts
       if (!Array.isArray(parts)) return
@@ -461,8 +377,7 @@ export const AlisBuildPlugin: Plugin = async ({ directory, worktree, client, $ }
       const sessionID: string | undefined =
         input?.sessionID ?? output?.message?.sessionID ?? output?.message?.info?.sessionID
 
-      await handoffLifecycle(sessionID, "UserPromptSubmit", cwd)
-
+      await handoffLifecycle(sessionID, "UserPromptSubmit")
       // Capture the user's raw prompt text BEFORE any injection mutates the
       // parts — the suggest payload must carry the prompt, not the primer.
       const promptText = parts
@@ -470,6 +385,11 @@ export const AlisBuildPlugin: Plugin = async ({ directory, worktree, client, $ }
         .map((p) => p.text)
         .join("\n")
         .trim()
+
+      if (!upgradeNoticeShown && hasCli() && !await native.supported) {
+        upgradeNoticeShown = true
+        parts.push({ type: "text", text: UPGRADE_NOTICE })
+      }
 
       // 1) Primer + service context, first user message of each session only.
       if (primer || serviceContext) {
@@ -525,16 +445,18 @@ export const AlisBuildPlugin: Plugin = async ({ directory, worktree, client, $ }
     "permission.ask": async (input: any, output: { status: "ask" | "deny" | "allow" }) => {
       if (input?.type !== "bash") return
       const cmd = String(input?.metadata?.command ?? input?.title ?? "")
-      if (classifyAlisCommand(cmd) !== "allow") return
-      output.status = "allow"
-      for (const id of [input?.callID, input?.id]) {
-        if (typeof id === "string" && id) autoAllowed.add(id)
+      const decision = await native.run("permission", {
+        session_id: input?.sessionID, tool_name: "Bash", tool_input: { command: cmd },
+      })
+      // Do not override a denial from another plugin or user policy.
+      if (output.status === "deny") return
+      if (decision?.status === "allow" || decision?.status === "deny" || decision?.status === "ask") {
+        output.status = decision.status
       }
     },
 
     "shell.env": async (input: any, output: { env: Record<string, string> }) => {
-      // The env marker the alis CLI requires before trusting an opencode-written
-      // approval record (a stale record from another harness grants nothing).
+      // Identity only. This plugin never writes standing approval grants.
       output.env.ALIS_OPENCODE = "1"
       // The hook input carries an optional sessionID (plugin d.ts: shell.env
       // input `{ cwd, sessionID?, callID? }`); surface it to the CLI when set.
@@ -544,19 +466,12 @@ export const AlisBuildPlugin: Plugin = async ({ directory, worktree, client, $ }
       }
     },
 
-    "tool.execute.before": async (input: any, output: any) => {
-      try { await handoffLifecycle(input?.sessionID, "PreToolUse", cwd) } catch (error) {
+    "tool.execute.before": async (input: any) => {
+      try { await handoffLifecycle(input?.sessionID, "PreToolUse") } catch (error) {
         // Abort through the vendor API, then observe its idle event. Do not
         // claim safety from merely throwing an error out of a tool hook.
         if (client?.session?.abort) void client.session.abort({ path: { id: input.sessionID } }).catch(() => {})
         throw error
-      }
-      if (input?.tool !== "bash") return
-      const cmd = String(output?.args?.command ?? "")
-      // Same conservative gate as the classifier: only a clean, single command
-      // whose first token is `alis` is worth recording.
-      if (cmd && !/[|&;<>`\n]|\$\(/.test(cmd) && cmd.trim().split(/\s+/)[0] === "alis") {
-        writeAgentApproval(cmd, input?.sessionID, autoAllowed.has(input?.callID ?? ""))
       }
     },
   }

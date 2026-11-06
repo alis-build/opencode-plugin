@@ -1,7 +1,7 @@
 # Alis Build opencode Plugin
 
-This prepared update aligns terminology and artifact reading with the coordinated
-CLI copy pass (proposed CLI 1.174.2). Publish the CLI and plugins together.
+Plugin 0.18.0 uses native Go hooks in Alis CLI 1.185.3 or newer. Upgrade the CLI
+before updating the plugin, then restart OpenCode.
 
 **Connect [opencode](https://opencode.ai) to Alis Build.**
 
@@ -36,31 +36,32 @@ builds, and deploys through the `alis` CLI — the opencode counterpart of the
   silent), and every failure path is silent. Inside an alis.build workspace every prompt
   reaches the CLI; elsewhere a cheap prefilter forwards only prompts that could carry a
   wake phrase (`ALIS_SUGGEST_ALWAYS=1` disables the prefilter)
-- Catalogue metadata refreshed quietly at plugin startup with `alis skills sync --cache-only`;
-  the plugin never installs or prunes native user skills
-- Strict `alis` CLI auto-approval via the plugin's `permission.ask` hook: clean, single
-  `alis …` commands run without a prompt; chained/redirected commands
-  (`alis define && rm -rf`) and the double-key carve-outs (`--confirm-production`,
-  `--approve`, `blocks|block uninstall --yes`) always stay on a human prompt. Restrict
-  further with a space-separated `ALIS_ALLOWED_SUBCMDS` allowlist
-- An approval bridge for the alis CLI's own gates: auto-allowed `alis` commands are
-  recorded at `~/.alis/agent-approval.json` (`permission_mode: "auto-allow"`) and the
-  plugin exports `ALIS_OPENCODE=1` into every shell command, so the CLI can treat a
-  plugin-approved command as a standing grant for non-production approvals. Production
-  deploys are unaffected — the CLI always requires `--confirm-production` from a human
+- Native Go handlers for permission decisions, secret-output warnings, catalogue
+  refresh, and handoff coordination. The plugin passes JSON directly to the installed
+  `alis` binary; these hooks do not invoke Python, Bash, or jq
+- Strict CLI permissions through the same Go policy as the other Alis plugins.
+  Read-only queries and supported DBD workflows can be auto-allowed according to
+  the CLI automation tier. Production, destructive actions, secret reveal, and
+  explicit approval flags remain on a human prompt. Chained commands, redirects,
+  expansions, and commands outside `ALIS_ALLOWED_SUBCMDS` receive no auto-allow
+- Secret-looking tool input/output gets a warning containing kinds and counts only;
+  the warning never repeats the values. Warnings are deduplicated by session
+- Session identity via `ALIS_OPENCODE` and `ALIS_SESSION_ID`. The plugin does not
+  write shared approval records or grant standing permission for CLI actions
 
 ## How this maps from the Claude Code plugin
 
-Shared Alis workflows use agent-specific mechanisms. Native session transfer is currently Claude-only.
+Shared Alis workflows use agent-specific mechanisms. OpenCode retains its native
+session transfer and vendor session-inventory callbacks.
 
 | Claude Code plugin | opencode equivalent | Lives in |
 | --- | --- | --- |
 | `skills/discover` + `skills/capture` (description-triggered router skills) | `/discover` + `/capture` + `/handoff` commands (`command/*.md` or `command` config key) | this repo / config |
 | `hooks/suggest-skills.sh` (`UserPromptSubmit` hook → `alis skills suggest`) | `chat.message` plugin hook appending an `<alis-skill-hint>` block | `src/index.ts` |
-| `hooks/sync-skills.sh` (`SessionStart`, catalogue only) | detached plugin-startup refresh using `--cache-only` | `src/index.ts` |
+| `hooks/sync-skills.sh` (`SessionStart`, catalogue only) | native startup sync (older CLI fallback uses `--cache-only`) | `alis` Go handlers |
 | `context/dbd-primer.md` + `context/dbd-digest.md` via workspace-gated `load-primer.sh` (`SessionStart`) | gated `chat.message` plugin hook (primer and digest ship in the npm package) | `src/index.ts` |
-| `allow-alis-cli.sh` (`PreToolUse` Bash hook) | `permission.ask` plugin hook (+ `"alis *": "ask"` config so it fires) | `src/index.ts` |
-| `~/.alis/agent-approval.json` bridge | `tool.execute.before` (bash) + `shell.env` plugin hooks | `src/index.ts` |
+| `allow-alis-cli.sh` (`PreToolUse` Bash hook) | `permission.ask` callback → native Go permission policy | `alis` Go handlers |
+| Per-call session attribution | `shell.env` exports identity; no shared approval grant | `src/index.ts` |
 | `inject-service-context.sh` (`SessionStart` hook) | `chat.message` plugin hook | `src/index.ts` |
 | `.claude-plugin/marketplace.json` | npm package + config snippet | `package.json` |
 
@@ -68,18 +69,23 @@ Shared Alis workflows use agent-specific mechanisms. Native session transfer is 
 > the plugin: opencode does have a `config` hook, but keeping the command text in
 > your config (and in `command/*.md`) keeps it visible and editable, and this repo's
 > contract is that the inline copies stay word-for-word identical to the files. The
-> primer and the alis approval logic live entirely in the plugin — no manual file
-> installs.
+> primer ships with the plugin and the approval policy lives in the Go CLI — no
+> manual helper installs.
 
 ## Before You Start
 
 You need:
 
 - opencode installed
-- The `alis` CLI installed, on your `PATH`, and signed in (`alis login`)
+- Alis CLI **1.185.3 or newer**, on your `PATH` (`alis upgrade`), and signed in (`alis login`)
 - An Alis Build account with access to the build environments and products you want to use
 
 ## Install
+
+An older CLI receives one upgrade notice per plugin load and normal OpenCode
+permission prompts. Catalogue refresh and the existing handoff coordinator retain
+compatibility; an unavailable CLI still blocks local continuation when a source
+handoff claim exists.
 
 ### 1. Add the config
 
@@ -139,12 +145,12 @@ automatically, from any directory.
 
 ### `alis` CLI auto-approval
 
-The `"alis *": "ask"` permission pattern routes every `alis` command to the plugin's
-`permission.ask` hook, which auto-allows only a clean, single `alis <subcommand> …`
-invocation — the same conservative parser as the Claude plugin's shell hook. Anything
-chained or redirected, and the explicit-approval carve-outs (`--confirm-production`,
-`--approve`, `blocks|block uninstall --yes`), fall through to opencode's normal prompt.
-If the plugin fails to load, all `alis` commands simply prompt — safe degradation.
+The `"alis *": "ask"` permission pattern routes CLI commands through the native
+Go permission policy. OpenCode receives only an allow, ask, or deny decision;
+the plugin never inserts `--approve` into a command. In the manual CLI tier,
+confirm the exact action and target before rerunning with `--approve`. Production
+still requires explicit approval of its pinned version, environment and branch.
+If the CLI is missing or too old, normal OpenCode permissions apply.
 
 ## Repository layout
 
@@ -156,9 +162,9 @@ opencode-plugin/
 ├── tsconfig.json
 ├── opencode.example.json   # config snippet to merge into opencode.json
 ├── src/
-│   └── index.ts            # plugin: primer + service context, per-prompt skill
-│                           #   suggestions, alis approval hook, agent-approval
-│                           #   bridge, shell env
+│   ├── index.ts            # plugin: primer + service context, per-prompt skill
+│                           #   suggestions and host callbacks
+│   └── native-hooks.ts     # bounded JSON transport to the Go CLI hooks
 ├── instructions/
 │   ├── dbd-primer.md       # DBD primer (workspace-gated injection; synced from claude-plugin)
 │   └── dbd-digest.md       # compressed digest for CLI-only sessions outside a workspace
