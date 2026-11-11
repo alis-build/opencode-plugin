@@ -27,15 +27,16 @@ builds, and deploys through the `alis` CLI — the opencode counterpart of the
   on a distinctive match, and stays silent otherwise (registry `search` is reserved for
   explicit "find me a skill" asks); `/capture` saves work just completed in the session
   as a reusable team skill
-- Ambient per-prompt skill suggestions: the plugin pipes user messages to
-  `alis skills suggest --hook --harness opencode` (a purely local ~40ms call) and appends
-  any suggestion to the message as an `<alis-skill-hint>` block. Wake phrases ("alis, …",
-  "capture this as a skill") yield deterministic routing instructions and work from any
-  directory; other prompts get at most one confidence-gated one-liner (the CLI keys on
-  distinctive id/name-token evidence, so generic Makefile/rename/debug prompts stay
-  silent), and every failure path is silent. Inside an alis.build workspace every prompt
-  reaches the CLI; elsewhere a cheap prefilter forwards only prompts that could carry a
-  wake phrase (`ALIS_SUGGEST_ALWAYS=1` disables the prefilter)
+- Wake phrases and plan-mode skill matches: the plugin pipes the user message to
+  `alis skills suggest --hook --harness opencode` and appends the answer to the message
+  as an `<alis-skill-hint>` block. Wake phrases ("alis, …", "capture this as a skill")
+  yield deterministic routing instructions and work from any directory. Under the plan
+  agent every prompt reaches the CLI, which asks the Skill store to rank the request
+  (about a second at most; needs `alis` 1.187.15 or later) and notes a match, so the plan
+  can use a skill your team already has. Under any other agent a cheap prefilter forwards
+  only prompts that could carry a wake phrase (`ALIS_SUGGEST_ALWAYS=1` disables it). The
+  CLI's local word-overlap guesses are dropped, because matching whole prompts suggested
+  unrelated skills too often, and every failure path is silent
 - Catalogue metadata refreshed quietly at plugin startup with `alis skills sync --cache-only`;
   the plugin never installs or prunes native user skills
 - Strict `alis` CLI auto-approval via the plugin's `permission.ask` hook: clean, single

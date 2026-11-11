@@ -36,17 +36,17 @@ import { fileURLToPath } from "node:url"
  *   5. Exporting `ALIS_OPENCODE=1` into every shell command via `shell.env` — the
  *      env marker the alis CLI requires before trusting the approval record —
  *      plus `ALIS_SESSION_ID` when the hook input carries a session id.
- *   6. Per-prompt ambient skill discovery via `chat.message` (mirror of the
- *      Claude plugin's `suggest-skills.sh` UserPromptSubmit hook): each user
- *      message is piped as a JSON payload to
- *      `alis skills suggest --hook --harness opencode`, and any plain-text
- *      output is appended to the message as an <alis-skill-hint> block. Inside
- *      an alis.build workspace every prompt goes to the CLI; elsewhere a cheap
- *      prefilter forwards only prompts that could carry a wake phrase
- *      ("alis, …", "capture this as a skill"), so explicit addresses work from
- *      any directory. The CLI owns all real gating — wake-phrase regexes,
- *      per-session caps, and the distinctive-score confidence gate that keeps
- *      ambient one-liners off generic prompts. Every failure path (alis
+ *   6. Wake-phrase routing and plan-mode skill discovery via `chat.message`
+ *      (mirror of the Claude plugin's `suggest-skills.sh` UserPromptSubmit
+ *      hook): the user message is piped as a JSON payload to
+ *      `alis skills suggest --hook --harness opencode`, and its plain-text
+ *      answer is appended to the message as an <alis-skill-hint> block. A
+ *      wake phrase ("alis, …", "capture this as a skill") is forwarded from
+ *      any directory. Under the plan agent every prompt is forwarded, and the
+ *      CLI asks the Skill store to rank the request; a match it words "Skill
+ *      store match for this request" is shown. The CLI's local word-overlap
+ *      guesses ("Possibly relevant Alis skill") are dropped: matching whole
+ *      prompts suggested unrelated skills too often. Every failure path (alis
  *      missing, spawn error, timeout, non-zero exit) is swallowed — discovery
  *      must never break a prompt.
  *
@@ -293,20 +293,45 @@ export function loadPrimerForMode(
   return load("dbd-primer.md")
 }
 
-/** Hard cap on how long a per-prompt suggest call may delay the message. */
-const SUGGEST_TIMEOUT_MS = 1500
+/**
+ * Hard cap on how long a per-prompt suggest call may delay the message. Under
+ * the plan agent the CLI may spend about a second asking the Skill store.
+ */
+const SUGGEST_TIMEOUT_MS = 2000
+
+/** The built-in agent whose prompts are planning, not doing. */
+const PLAN_AGENT = "plan"
 
 /**
- * Should this prompt be forwarded to `alis skills suggest`? Inside an
- * alis.build workspace: always. Elsewhere: only when the prompt could carry a
- * wake phrase ("alis, …", "capture this as a skill") — a loose lexical
- * prefilter; the CLI's strict regexes make the actual decision.
- * ALIS_SUGGEST_ALWAYS=1 disables the prefilter.
+ * Should this prompt be forwarded to `alis skills suggest`? Under the plan
+ * agent: always, because that is where the CLI asks the Skill store. Otherwise
+ * only when the prompt could carry a wake phrase ("alis, …", "capture this as
+ * a skill") — a loose lexical prefilter; the CLI's strict regexes make the
+ * actual decision. ALIS_SUGGEST_ALWAYS=1 disables the prefilter.
  */
-export function shouldRunSuggest(cwd: string, prompt: string, env: Record<string, string | undefined> = process.env): boolean {
-  if (cwd.includes("/alis.build/")) return true
+export function shouldRunSuggest(agent: string | undefined, prompt: string, env: Record<string, string | undefined> = process.env): boolean {
+  if (agent === PLAN_AGENT) return true
   if (env.ALIS_SUGGEST_ALWAYS === "1") return true
   return /alis|skill/i.test(prompt)
+}
+
+/**
+ * The permission mode the suggest payload reports. The CLI asks the Skill
+ * store only for "plan"; opencode's equivalent is its plan agent.
+ */
+export function suggestPermissionMode(agent: string | undefined): "plan" | "default" {
+  return agent === PLAN_AGENT ? "plan" : "default"
+}
+
+/**
+ * The CLI's answer as it should be shown, or "" when it should not be. A note
+ * that opens "Possibly relevant Alis skill" is a guess from the CLI's local
+ * word-overlap matcher and is dropped; a wake-phrase instruction and a Skill
+ * store match pass through.
+ */
+export function shownSuggestHint(answer: string): string {
+  const hint = answer.trim()
+  return /^Possibly relevant Alis skills?:/.test(hint) ? "" : hint
 }
 
 export const CATALOG_SYNC_ARGS = ["skills", "sync", "--cache-only"] as const
@@ -400,13 +425,13 @@ export const AlisBuildPlugin: Plugin = async ({ directory, worktree, client, $ }
    * `.quiet()` keeps the CLI's stdout out of the terminal. Any failure —
    * including a missing alis binary — resolves to "".
    */
-  const runSuggest = async (prompt: string, sessionID: string | undefined): Promise<string> => {
+  const runSuggest = async (prompt: string, sessionID: string | undefined, agent: string | undefined): Promise<string> => {
     if (typeof $ !== "function") return ""
     const payload = JSON.stringify({
       session_id: sessionID ?? "",
       prompt,
       cwd,
-      permission_mode: "default",
+      permission_mode: suggestPermissionMode(agent),
     })
     const stdin = new ReadableStream({
       start(controller) {
@@ -416,7 +441,7 @@ export const AlisBuildPlugin: Plugin = async ({ directory, worktree, client, $ }
     })
     const out = await $`alis skills suggest --hook --harness opencode < ${stdin}`.quiet().nothrow()
     if (out.exitCode !== 0) return ""
-    return out.text().trim()
+    return shownSuggestHint(out.text())
   }
 
   // Inject the blocks into the first user message of each session only.
@@ -496,15 +521,16 @@ export const AlisBuildPlugin: Plugin = async ({ directory, worktree, client, $ }
         }
       }
 
-      // 2) Per-prompt ambient skill discovery, every user message with text.
-      // Inside a workspace the CLI sees every prompt; elsewhere only prompts
-      // that could carry a wake phrase are forwarded. The CLI owns all real
-      // gating (wake phrases, dedupe, confidence, latency budget).
+      // 2) Wake-phrase routing and plan-mode skill discovery. Under the plan
+      // agent the CLI sees every prompt; otherwise only prompts that could
+      // carry a wake phrase are forwarded. The CLI owns all real gating (wake
+      // phrases, dedupe, the Skill store's relevance floor, latency budget).
       if (!promptText) return
-      if (!shouldRunSuggest(cwd, promptText)) return
+      const agent: string | undefined = typeof input?.agent === "string" ? input.agent : undefined
+      if (!shouldRunSuggest(agent, promptText)) return
       try {
         const hint = await Promise.race([
-          runSuggest(promptText, sessionID).catch(() => ""),
+          runSuggest(promptText, sessionID, agent).catch(() => ""),
           new Promise<string>((resolve) => setTimeout(() => resolve(""), SUGGEST_TIMEOUT_MS)),
         ])
         if (!hint) return
