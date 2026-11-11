@@ -294,8 +294,8 @@ export function loadPrimerForMode(
 }
 
 /**
- * Hard cap on how long a per-prompt suggest call may delay the message. Under
- * the plan agent the CLI may spend about a second asking the Skill store.
+ * Hard cap on how long a per-prompt suggest call may delay the message. The
+ * CLI may spend about a second asking the Skill store.
  */
 const SUGGEST_TIMEOUT_MS = 2000
 
@@ -303,35 +303,41 @@ const SUGGEST_TIMEOUT_MS = 2000
 const PLAN_AGENT = "plan"
 
 /**
- * Should this prompt be forwarded to `alis skills suggest`? Under the plan
- * agent: always, because that is where the CLI asks the Skill store. Otherwise
- * only when the prompt could carry a wake phrase ("alis, …", "capture this as
- * a skill") — a loose lexical prefilter; the CLI's strict regexes make the
- * actual decision. ALIS_SUGGEST_ALWAYS=1 disables the prefilter.
+ * Should this prompt be forwarded to `alis skills suggest`? Yes: the CLI asks
+ * the Skill store to rank any prompt that passes its gates (alis 1.187.18 or
+ * later; before that, under the plan agent only). ALIS_SUGGEST_ALWAYS=0 goes
+ * back to forwarding only where it used to: under the plan agent, and when
+ * the prompt could carry a wake phrase ("alis, …", "capture this as a
+ * skill"), a loose lexical prefilter for the CLI's strict regexes.
  */
 export function shouldRunSuggest(agent: string | undefined, prompt: string, env: Record<string, string | undefined> = process.env): boolean {
+  if (env.ALIS_SUGGEST_ALWAYS !== "0") return true
   if (agent === PLAN_AGENT) return true
-  if (env.ALIS_SUGGEST_ALWAYS === "1") return true
   return /alis|skill/i.test(prompt)
 }
 
 /**
- * The permission mode the suggest payload reports. The CLI asks the Skill
- * store only for "plan"; opencode's equivalent is its plan agent.
+ * The permission mode the suggest payload reports. The CLI notes up to three
+ * matches for "plan" and one otherwise; opencode's equivalent is its plan agent.
  */
 export function suggestPermissionMode(agent: string | undefined): "plan" | "default" {
   return agent === PLAN_AGENT ? "plan" : "default"
 }
 
+/** Added to a Skill store match: a "can you help with …" prompt is often answered without loading anything. */
+const NAME_THE_SKILL = "If you answer without loading it, name the skill in your answer so the user knows it exists."
+
 /**
  * The CLI's answer as it should be shown, or "" when it should not be. A note
  * that opens "Possibly relevant Alis skill" is a guess from the CLI's local
- * word-overlap matcher and is dropped; a wake-phrase instruction and a Skill
- * store match pass through.
+ * word-overlap matcher and is dropped; a wake-phrase instruction passes
+ * through; a Skill store match passes through with a line asking the agent to
+ * name the skill.
  */
 export function shownSuggestHint(answer: string): string {
   const hint = answer.trim()
-  return /^Possibly relevant Alis skills?:/.test(hint) ? "" : hint
+  if (/^Possibly relevant Alis skills?:/.test(hint)) return ""
+  return /^Skill store match/.test(hint) ? `${hint}\n${NAME_THE_SKILL}` : hint
 }
 
 export const CATALOG_SYNC_ARGS = ["skills", "sync", "--cache-only"] as const
@@ -521,9 +527,8 @@ export const AlisBuildPlugin: Plugin = async ({ directory, worktree, client, $ }
         }
       }
 
-      // 2) Wake-phrase routing and plan-mode skill discovery. Under the plan
-      // agent the CLI sees every prompt; otherwise only prompts that could
-      // carry a wake phrase are forwarded. The CLI owns all real gating (wake
+      // 2) Wake-phrase routing and skill discovery. The CLI sees every
+      // prompt unless ALIS_SUGGEST_ALWAYS=0. It owns all real gating (wake
       // phrases, dedupe, the Skill store's relevance floor, latency budget).
       if (!promptText) return
       const agent: string | undefined = typeof input?.agent === "string" ? input.agent : undefined

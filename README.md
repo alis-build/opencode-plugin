@@ -27,15 +27,16 @@ builds, and deploys through the `alis` CLI — the opencode counterpart of the
   on a distinctive match, and stays silent otherwise (registry `search` is reserved for
   explicit "find me a skill" asks); `/capture` saves work just completed in the session
   as a reusable team skill
-- Wake phrases and plan-mode skill matches: the plugin pipes the user message to
+- Wake phrases and Skill store matches: the plugin pipes the user message to
   `alis skills suggest --hook --harness opencode` and appends the answer to the message
   as an `<alis-skill-hint>` block. Wake phrases ("alis, …", "capture this as a skill")
-  yield deterministic routing instructions and work from any directory. Under the plan
-  agent every prompt reaches the CLI, which asks the Skill store to rank the request
-  (about a second at most; needs `alis` 1.187.15 or later) and notes a match, so the plan
-  can use a skill your team already has. Under any other agent a cheap prefilter forwards
-  only prompts that could carry a wake phrase (`ALIS_SUGGEST_ALWAYS=1` disables it). The
-  CLI's local word-overlap guesses are dropped, because matching whole prompts suggested
+  yield deterministic routing instructions and work from any directory. Every other
+  prompt reaches the CLI too, which asks the Skill store to rank it once it passes the
+  CLI's gates (about a second at most; needs `alis` 1.187.18 or later, and with an older
+  `alis` only the plan agent is covered) and notes a match: one skill, or up to three under
+  the plan agent. The note asks the agent to name the skill even when it answers without
+  loading it. The prompt text is sent to the Skill store; `ALIS_SUGGEST_ALWAYS=0` keeps
+  this to wake phrases and the plan agent. The CLI's local word-overlap guesses are dropped, because matching whole prompts suggested
   unrelated skills too often, and every failure path is silent
 - Catalogue metadata refreshed quietly at plugin startup with `alis skills sync --cache-only`;
   the plugin never installs or prunes native user skills
