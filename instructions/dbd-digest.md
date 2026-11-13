@@ -27,7 +27,9 @@ self-documenting: `alis docs` and `alis <cmd> --help` are the source of truth. U
 hand-roll package-manager environments — `alis packages` handles the private registries
 and credentials for you. The working directory is the context — after `alis service new`,
 use `alis --cwd /absolute/buildFolder ...` before continuing. When a conversation
-references an Ideate project (`ideas/<id>`), run `alis ideate context <id>` first.
+references an Ideate project (`ideas/<id>`), run `alis ideate context <id>` first. Asked what the
+team has been doing, run `alis catch-up --days 5 --json` before `git log`: it covers
+sessions, deploys and conversations, which git does not.
 
 If a local build cannot download private Alis packages, first run
 `alis packages install <pkg> --language go --json` (select the relevant language).

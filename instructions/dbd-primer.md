@@ -134,6 +134,12 @@ directory.
   (`ideas/<id>`), run `alis ideate context <id>` first — one markdown document with
   everything the project holds; dig with `alis ideate artifacts read`, `alis ideate contribution` and `alis ideate find`
   (`alis docs ideate`).
+- **What the team has been doing.** Asked what teammates worked on, shipped or are
+  busy with, run `alis catch-up --days 5 --json` before `git log`: each active day's
+  people, their pieces of work and what shipped where, from the sessions, builds,
+  deploys, commits and conversations in the user's active account, which git does
+  not show. `alis catch-up --day <day> --part <id>` explains one piece. Needs CLI
+  1.190.6 or later (`alis upgrade`).
 - **Auth recovery.** A git auth failure against an Alis remote: run
   `alis authorise <org>.<product> --json` once and retry — a one-time repair, not a
   pre-push ritual. Exit code 4 anywhere means signed out → the user runs `alis login`.
