@@ -78,7 +78,12 @@ session (`alis docs skills`).
 **Execute DBD through the `alis` CLI.** It is deterministic, auto-detects context, and
 chains steps into one call:
 
-- **Define** (and publish packages): `alis define <pkg> --json --install --async`
+- **Define** (and install packages): `alis define <pkg> --json --install` — this one waits,
+  but only for the packages of the languages the service's folder uses (seconds for Go and
+  Node). `done: true` is finished even while `packages.generating` lists slower languages:
+  the server completes them, and `--languages all` waits for every one. `--install` runs
+  after that wait, so the CLI rejects it with `--async` (`FLAG_CONFLICT`). Started with
+  `--async`, wait on the operation, then run `alis packages install <pkg> --json`.
 - **Build** (optionally deploy): `alis build <pkg> --json --deploy -e <env> --async`
 - **Deploy**: `alis deploy <pkg> --version <version> -e <env> --json --async`
 - **Packages**: `alis packages install|upgrade|add <pkg> --json`
